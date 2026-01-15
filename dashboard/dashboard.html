@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700&family=Noto+Sans+Arabic:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-brand">Dashboard</div>
+        <div class="nav-actions">
+            <button id="darkModeToggle" class="btn btn-icon" title="Toggle Dark Mode">🌙</button>
+            <button id="logoutBtn" class="btn btn-secondary">Logout</button>
+        </div>
+    </nav>
+
+    <!-- Main Container -->
+    <div class="dashboard-container">
+        <!-- Left Side: Form -->
+        <div class="form-section">
+            <h2>إضافة قناة جديدة</h2>
+            <form id="entryForm" class="entry-form">
+                <div class="form-group">
+                    <label for="channelName">Channel Name <span class="required">*</span></label>
+                    <input type="text" id="channelName" name="channelName" required>
+                </div>
+                <div class="form-group">
+                    <label for="channelSource">Channel Source <span class="required">*</span></label>
+                    <input type="text" id="channelSource" name="channelSource" required>
+                </div>
+                <div class="form-group">
+                    <label for="imageUrl">Image URL <span class="required">*</span></label>
+                    <input type="url" id="imageUrl" name="imageUrl" required>
+                </div>
+                <div class="form-group">
+                    <label for="pageToken">Page Token <span class="required">*</span></label>
+                    <input type="text" id="pageToken" name="pageToken" required>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary" id="submitBtn">إضافة</button>
+                    <button type="button" class="btn btn-secondary" id="cancelEditBtn" style="display: none;">إلغاء</button>
+                </div>
+            </form>
+
+            <!-- Script Management Section -->
+            <div class="script-management-section">
+                <h2>إدارة السكربت</h2>
+                <div class="script-controls">
+                    <div class="script-status">
+                        <span class="status-label">الحالة:</span>
+                        <span id="scriptStatus" class="status-badge status-unknown">غير معروف</span>
+                    </div>
+                    <div class="script-buttons">
+                        <button id="startScriptBtn" class="btn btn-success">▶ Start</button>
+                        <button id="stopScriptBtn" class="btn btn-danger">⏹ Stop</button>
+                        <button id="restartScriptBtn" class="btn btn-primary">🔄 Restart</button>
+                    </div>
+                </div>
+                
+                <!-- Logs/Status Section -->
+                <div class="logs-section">
+                    <div class="logs-header">
+                        <h3>السجلات والحالة</h3>
+                        <button id="clearLogsBtn" class="btn btn-secondary">مسح السجلات</button>
+                    </div>
+                    <div id="logsContainer" class="logs-container">
+                        <div class="log-entry">في انتظار السجلات...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Side: List -->
+        <div class="list-section">
+            <div class="list-header">
+                <h2>القنوات المسجلة</h2>
+                <button id="publishJsonBtn" class="btn btn-primary">Publish</button>
+            </div>
+            <div id="entriesList" class="entries-list">
+                <p class="empty-message">لا توجد قنوات مسجلة بعد</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="dashboard.js"></script>
+</body>
+</html>
