@@ -5,7 +5,7 @@ import dotenv from 'dotenv';
 // تحميل متغيرات البيئة
 dotenv.config();
 
-const BOT_TOKEN = process.env.BOT_TOKEN || "8577692320:AAFC_1XLvRNTCyUyCvcbeqTt3yPxDL5IuE8";
+const BOT_TOKEN = process.env.BOT_TOKEN;
 const MAX_DURATION = (parseInt(process.env.MAX_DURATION_HOURS) || 4) * 60 * 60 * 1000; // 4 ساعات افتراضياً
 const MAX_RETRIES = parseInt(process.env.MAX_RETRIES) || 30000;
 
