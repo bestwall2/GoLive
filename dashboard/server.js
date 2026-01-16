@@ -93,127 +93,6 @@ app.get('/api/auth/status', (req, res) => {
     });
 });
 
-// Helper function to fetch channels from external API
-async function fetchChannelsFromAPI() {
-    return new Promise((resolve, reject) => {
-        const url = new URL(EXTERNAL_API_URL);
-        const protocol = url.protocol === 'https:' ? https : http;
-        
-        const options = {
-            hostname: url.hostname,
-            port: url.port || (url.protocol === 'https:' ? 443 : 80),
-            path: url.pathname + url.search,
-            method: 'GET',
-            headers: {
-                'Content-Type': 'application/json'
-            }
-        };
-        
-        const req = protocol.request(options, (res) => {
-            let data = '';
-            
-            res.on('data', (chunk) => {
-                data += chunk;
-            });
-            
-            res.on('end', () => {
-                try {
-                    const response = JSON.parse(data);
-                    if (response.success && response.data) {
-                        // Convert external API format to internal format
-                        const channels = response.data.map((item, index) => ({
-                            id: Date.now() + index,
-                            pageToken: item.token,
-                            channelName: item.name,
-                            channelSource: item.source,
-                            imageUrl: item.img,
-                            createdAt: new Date().toISOString()
-                        }));
-                        resolve(channels);
-                    } else {
-                        resolve([]);
-                    }
-                } catch (error) {
-                    console.error('Error parsing API response:', error);
-                    resolve([]);
-                }
-            });
-        });
-        
-        req.on('error', (error) => {
-            console.error('Error fetching from API:', error);
-            resolve([]);
-        });
-        
-        req.setTimeout(10000, () => {
-            req.destroy();
-            console.error('API request timeout');
-            resolve([]);
-        });
-        
-        req.end();
-    });
-}
-
-// Helper function to send channels to external API
-async function publishChannelsToAPI(channels) {
-    return new Promise((resolve, reject) => {
-        // Convert internal format to external API format
-        const apiData = channels.map(channel => ({
-            token: channel.pageToken,
-            name: channel.channelName,
-            source: channel.channelSource,
-            img: channel.imageUrl
-        }));
-        
-        const url = new URL(EXTERNAL_API_URL);
-        const protocol = url.protocol === 'https:' ? https : http;
-        const postData = JSON.stringify({ data: apiData });
-        
-        const options = {
-            hostname: url.hostname,
-            port: url.port || (url.protocol === 'https:' ? 443 : 80),
-            path: url.pathname + url.search,
-            method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json',
-                'Content-Length': Buffer.byteLength(postData)
-            }
-        };
-        
-        const req = protocol.request(options, (res) => {
-            let data = '';
-            
-            res.on('data', (chunk) => {
-                data += chunk;
-            });
-            
-            res.on('end', () => {
-                try {
-                    const response = JSON.parse(data);
-                    resolve({ success: true, response });
-                } catch (error) {
-                    console.error('Error parsing API response:', error);
-                    resolve({ success: false, error: error.message });
-                }
-            });
-        });
-        
-        req.on('error', (error) => {
-            console.error('Error publishing to API:', error);
-            resolve({ success: false, error: error.message });
-        });
-        
-        req.setTimeout(15000, () => {
-            req.destroy();
-            resolve({ success: false, error: 'Request timeout' });
-        });
-        
-        req.write(postData);
-        req.end();
-    });
-}
-
 // Helper function to read channels from JSON file
 function readChannels() {
     try {
@@ -245,17 +124,7 @@ app.get('/api/channels', async (req, res) => {
         return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
     
-    // Try to load from API first, fallback to local file
-    let channels = await fetchChannelsFromAPI();
-    
-    // If API returns empty or fails, use local file
-    if (!channels || channels.length === 0) {
-        channels = readChannels();
-    } else {
-        // Save fetched channels to local file for backup
-        writeChannels(channels);
-    }
-    
+    const channels = readChannels();
     res.json({ success: true, data: channels });
 });
 
@@ -572,31 +441,6 @@ app.post('/api/script/logs/clear', (req, res) => {
     res.json({ success: true, message: 'Logs cleared' });
 });
 
-// Publish channels to external API
-app.post('/api/channels/publish', async (req, res) => {
-    if (!req.session.authenticated) {
-        return res.status(401).json({ success: false, message: 'Unauthorized' });
-    }
-    
-    try {
-        const channels = readChannels();
-        
-        if (channels.length === 0) {
-            return res.status(400).json({ success: false, message: 'No channels to publish' });
-        }
-        
-        const result = await publishChannelsToAPI(channels);
-        
-        if (result.success) {
-            res.json({ success: true, message: 'Channels published successfully', response: result.response });
-        } else {
-            res.status(500).json({ success: false, message: result.error || 'Failed to publish channels' });
-        }
-    } catch (error) {
-        console.error('Error publishing channels:', error);
-        res.status(500).json({ success: false, message: error.message });
-    }
-});
 
 // Root route - redirect to login
 app.get('/', (req, res) => {
