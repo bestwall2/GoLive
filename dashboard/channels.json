@@ -6,13 +6,5 @@
     "channelSource": "fgdsfdfbwfd",
     "imageUrl": "http://localhost:3000",
     "createdAt": "2025-12-24T22:16:07.704Z"
-  },
-  {
-    "id": 1768598677448,
-    "pageToken": "test-token",
-    "channelName": "Test Channel",
-    "channelSource": "Test Source",
-    "imageUrl": "http://example.com/image.png",
-    "createdAt": "2026-01-16T21:24:37.448Z"
   }
 ]
