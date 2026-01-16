@@ -40,9 +40,6 @@ function initializeEventListeners() {
     document.getElementById('entryForm').addEventListener('submit', handleFormSubmit);
     document.getElementById('cancelEditBtn').addEventListener('click', cancelEdit);
     
-    // Publish JSON button
-    document.getElementById('publishJsonBtn').addEventListener('click', publishJson);
-    
     // Script management buttons
     document.getElementById('startScriptBtn').addEventListener('click', startScript);
     document.getElementById('stopScriptBtn').addEventListener('click', stopScript);
@@ -252,40 +249,6 @@ function renderEntries() {
             </div>
         </div>
     `).join('');
-}
-
-// Publish JSON to external API
-async function publishJson() {
-    const publishBtn = document.getElementById('publishJsonBtn');
-    const originalText = publishBtn.textContent;
-    
-    // Disable button during request
-    publishBtn.disabled = true;
-    publishBtn.textContent = 'جاري النشر...';
-    
-    try {
-        const response = await fetch(`${API_BASE}/api/channels/publish`, {
-            method: 'POST',
-            credentials: 'include',
-            headers: {
-                'Content-Type': 'application/json'
-            }
-        });
-        
-        const data = await response.json();
-        
-        if (data.success) {
-            showToast('تم نشر القنوات بنجاح إلى API', 'success');
-        } else {
-            showToast(data.message || 'فشل نشر القنوات', 'error');
-        }
-    } catch (error) {
-        console.error('Error publishing channels:', error);
-        showToast('خطأ في الاتصال بالخادم', 'error');
-    } finally {
-        publishBtn.disabled = false;
-        publishBtn.textContent = originalText;
-    }
 }
 
 // Dark Mode Functions
