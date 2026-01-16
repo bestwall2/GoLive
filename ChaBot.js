@@ -7,15 +7,14 @@ import os from "os";
 import process from "process";
 import path from "path";
 import crypto from 'crypto';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 /* ================= CONFIG ================= */
 
 const CONFIG = {
   pollInterval: 20000,
-  telegram: {
-    botToken: "7971806903:AAHwpdNzkk6ClL3O17JVxZnp5e9uI66L9WE",
-    chatId: "-1002181683719",
-  },
   initialDelay: 50000, // 50 seconds for ALL servers initial start
   newServerDelay: 30000, // 30 seconds for NEW servers
   crashedServerDelay: 90000, // 1:30 minutes for CRASHED servers
@@ -40,9 +39,8 @@ const CONFIG = {
 
   // Facebook Post Configuration
   facebookPost: {
-    postId: "779725158558904_122119653315023471",
-    accessToken:
-      "EAFb7enAJEpABQVEUUWTaYuUMa8TmqDCSaBNTrhtKVMOkpNCzGV6wCU0VE7ZCBA38GAV0OezMn1EyUJOERy4xH1FSzPlnhi7vf0Td8slZAZBv3KOZB6E2imPibIMhb6GY2VMlrq2A8Flpx6jUDKzdFMWUZAmMVfXL7MqwWgLBYOeTcO3LkKdVj3zyhQVrd3fvqQZCM9aJBt",
+    postId: process.env.FB_POST_ID,
+    accessToken: process.env.FB_ACCESS_TOKEN,
   },
 };
 
@@ -60,7 +58,6 @@ let restartTimers = new Map(); // restart timers (per-stream)
 let serverStates = new Map(); // server states
 let startupTimer = null; // for initial startup delay
 let isRestarting = false; // flag to prevent multiple restarts
-let telegramPollingActive = true; // control telegram polling
 
 // NEW: must-fix runtime variables
 let isUpdatingFacebookPost = false;
@@ -202,46 +199,6 @@ function saveCache() {
 
 const log = (m) => console.log(`[${new Date().toISOString()}] ${m}`);
 
-/* ================= TELEGRAM ================= */
-
-async function tg(msg, chatId = CONFIG.telegram.chatId, retries = 3) {
-  for (let attempt = 1; attempt <= retries; attempt++) {
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 10000);
-
-      const response = await fetch(
-        `https://api.telegram.org/bot${CONFIG.telegram.botToken}/sendMessage`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: msg,
-            parse_mode: "HTML",
-            disable_web_page_preview: true,
-          }),
-          signal: controller.signal
-        }
-      );
-
-      clearTimeout(timeout);
-
-      const result = await response.json();
-      if (!result.ok) {
-        log(`❌ Telegram error: ${result.description}`);
-      }
-      return;
-    } catch (error) {
-      if (attempt === retries) {
-        log(`❌ Telegram send error after ${retries} attempts: ${error.message}`);
-      } else {
-        log(`⚠️ Telegram attempt ${attempt} failed: ${error.message}, retrying...`);
-        await new Promise(r => setTimeout(r, 2000 * attempt));
-      }
-    }
-  }
-}
 
 /* ================= ENCRYPTION FUNCTIONS ================= */
 
@@ -372,8 +329,6 @@ async function createLiveWithTimestamp(token, name) {
         `Action: Stream will not start until token is fixed`;
 
       log(`🔴 Token error for ${name}: ${error.message}`);
-
-      await tg(errorMsg);
 
       throw new Error(`TOKEN_ERROR: ${error.message}`);
     }
@@ -878,15 +833,6 @@ function classifyStartupFailure(item, message = "Startup failure") {
 
   serverStates.set(item.id, "restarting");
 
-  // notify once (avoid over-notifying)
-  tg(
-    `🔴 <b>STARTUP REJECTED</b>\n\n` +
-    `<b>${item.name}</b>\n` +
-    `Reason: ${message}\n` +
-    `Retry in: ${(backoff / 1000).toFixed(1)}s\n` +
-    `Attempt: ${attempts}`
-  );
-
   // schedule retry
   if (restartTimers.has(item.id)) {
     clearTimeout(restartTimers.get(item.id));
@@ -1063,7 +1009,7 @@ async function restartSystem() {
 
   systemState = "restarting";
 
-  await tg("🔁 <b>System Restart Initiated</b>\nStopping all streams and cleaning up...");
+  log("🔁 System Restart Initiated. Stopping all streams and cleaning up...");
 
   // 1. Clean up ALL timers for each stream BEFORE stopping
   log("🧹 Cleaning up all timers for each stream...");
@@ -1105,7 +1051,7 @@ async function restartSystem() {
   isRestarting = false;
 
   log("🔄 Restarting system from scratch...");
-  await tg("✅ <b>Cleanup Complete</b>\nNow booting up fresh system...");
+  log("✅ Cleanup Complete. Now booting up fresh system...");
 
   boot();
 }
@@ -1158,12 +1104,7 @@ async function rotateStreamKey(item) {
     await updateFacebookPost();
 
     const creationTimeFormatted = new Date(newCache.creationTime).toLocaleString();
-    await tg(
-      `🔄 <b>STREAM KEY ROTATED</b>\n\n` +
-      `<b>${item.name}</b>\n` +
-      `DASH URL: <code>${newCache.dash}</code>\n` +
-      `Created at: ${creationTimeFormatted}`
-    );
+    log(`🔄 STREAM KEY ROTATED for ${item.name}. DASH URL: ${newCache.dash}, Created at: ${creationTimeFormatted}`);
 
     // ✅ CLEAN UP TIMERS AFTER SUCCESSFUL ROTATION
     cleanupTimersAfterRotation(item.id);
@@ -1506,144 +1447,11 @@ async function watcher() {
   }
 }
 
-/* ================= TELEGRAM BOT COMMANDS ================= */
-
-let lastCommandTime = new Map();
-
-async function handleTelegramCommand(update) {
-  try {
-    const message = update.message;
-    if (!message || !message.text) return;
-
-    const chatId = message.chat.id;
-    const userId = message.from.id;
-    const command = message.text.trim().toLowerCase();
-    const now = Date.now();
-
-    if (lastCommandTime.has(userId)) {
-      const lastTime = lastCommandTime.get(userId);
-      if (now - lastTime < 5000) {
-        await tg("⏳ Please wait 5 seconds between commands.", chatId);
-        return;
-      }
-    }
-    lastCommandTime.set(userId, now);
-
-    if (lastCommandTime.size > 100) {
-      const oldest = Array.from(lastCommandTime.entries())
-        .sort((a, b) => a[1] - b[1])
-        .slice(0, 20);
-      oldest.forEach(([uid]) => lastCommandTime.delete(uid));
-    }
-
-    if (command === "/restart") {
-      await tg("🔄 <b>Restarting Stream Manager...</b>\nThis will take a moment...", chatId);
-      await restartSystem();
-      return;
-    }
-
-    if (command === "/info" || command.startsWith("/info")) {
-      const report = await generateInfoReport();
-      await tg(report, chatId);
-      return;
-    }
-
-    if (command === "/status" || command.startsWith("/status")) {
-      const status =
-        `📊 <b>Stream Manager Status</b>\n\n` +
-        `🟢 Active Streams: ${activeStreams.size}\n` +
-        `📋 API Items: ${apiItems.size}\n` +
-        `💾 Cache Entries: ${streamCache.size}\n` +
-        `⏰ Server Uptime: ${formatUptime(process.uptime() * 1000)}\n` +
-        `🆕 New Server Delay: ${CONFIG.newServerDelay / 1000}s\n` +
-        `🔧 Crashed Server Delay: ${CONFIG.crashedServerDelay / 1000}s\n` +
-        `⏳ Rotation: ${CONFIG.rotationInterval / (1000 * 60 * 60)}h\n` +
-        `🕒 Time: ${new Date().toLocaleString()}\n\n` +
-        `Use /info for detailed report\n` +
-        `Use /restart to restart system`;
-      await tg(status, chatId);
-      return;
-    }
-
-    if (command === "/help" || command.startsWith("/help")) {
-      const helpText =
-        `🤖 <b>Stream Manager Bot Commands</b>\n\n` +
-        `/info - Get detailed system and stream report\n` +
-        `/status - Quick status check\n` +
-        `/restart - Restart the entire system\n` +
-        `/help - Show this help message\n\n` +
-        `<i>Auto-monitoring ${CONFIG.pollInterval / 1000}s intervals</i>\n` +
-        `<i>New server delay: ${CONFIG.newServerDelay / 1000}s</i>\n` +
-        `<i>Crashed server delay: ${CONFIG.crashedServerDelay / 1000}s</i>\n` +
-        `<i>Rotation interval: ${CONFIG.rotationInterval / (1000 * 60 * 60)}h</i>`;
-      await tg(helpText, chatId);
-    }
-  } catch (error) {
-    console.error("Command handler error:", error);
-  }
-}
-
-/* ================= TELEGRAM POLLING ================= */
-
-async function telegramBotPolling() {
-  let offset = 0;
-  let errorCount = 0;
-  const maxErrors = 10;
-
-  while (systemState === "running" && telegramPollingActive) {
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 35000);
-
-      const response = await fetch(
-        `https://api.telegram.org/bot${CONFIG.telegram.botToken}/getUpdates?offset=${offset}&timeout=30`,
-        { signal: controller.signal }
-      );
-
-      clearTimeout(timeout);
-
-      const data = await response.json();
-
-      if (data.ok && data.result.length > 0) {
-        errorCount = 0;
-        for (const update of data.result) {
-          offset = update.update_id + 1;
-          await handleTelegramCommand(update);
-        }
-      } else if (!data.ok) {
-        log(`⚠️ Telegram API error: ${data.description}`);
-        errorCount++;
-      }
-    } catch (error) {
-      errorCount++;
-
-      if (error.name === "AbortError") {
-        log("⏱️ Telegram polling timeout, retrying...");
-      } else {
-        log(`⚠️ Telegram polling error (${errorCount}/${maxErrors}): ${error.message}`);
-      }
-
-      const waitTime = errorCount > 5 ? 30000 : 5000;
-      await new Promise((r) => setTimeout(r, waitTime));
-
-      if (errorCount >= maxErrors) {
-        log("⚠️ Too many Telegram errors, restarting polling...");
-        errorCount = 0;
-        await new Promise((r) => setTimeout(r, 60000));
-      }
-    }
-
-    await new Promise((r) => setTimeout(r, 1000));
-  }
-}
-
 /* ================= FINAL CHECK ================= */
 
 async function finalCheckReport() {
   if (activeStreams.size === 0) {
-    await tg(
-      "⚠️ <b>No active streams detected</b>\nSystem is running but no streams are active."
-    );
+    log("⚠️ No active streams detected. System is running but no streams are active.");
     return;
   }
 
@@ -1655,15 +1463,11 @@ async function finalCheckReport() {
     const keyAge = formatTimeSinceCreation(id);
 
     lines.push(
-      `<b>${item ? item.name : id}</b>\n` +
-      `Status: ${state || "unknown"}\n` +
-      `Key Age: ${keyAge}\n` +
-      `DASH: <code>${v.dash}</code>\n` +
-      `Uptime: ${formatUptime(startTime ? Date.now() - startTime : 0)}`
+      `${item ? item.name : id} | Status: ${state || "unknown"} | Key Age: ${keyAge} | Uptime: ${formatUptime(startTime ? Date.now() - startTime : 0)}`
     );
   });
 
-  await tg(`📡 <b>DASH REPORT</b>\n\n${lines.join("\n\n")}`);
+  log(`📡 DASH REPORT:\n${lines.join("\n")}`);
 }
 
 /* ================= BOOT WITH PROPER SYNCHRONIZATION ================= */
@@ -1688,18 +1492,7 @@ async function boot() {
 
     // 4. Send startup notification
     const delaySeconds = CONFIG.initialDelay / 1000;
-    await tg(
-      `🚀 <b>Stream Manager Started</b>\n\n` +
-      `API Items: ${apiItems.size}\n` +
-      `Cache Entries: ${streamCache.size}\n` +
-      `Sync Status: ${syncResult.removedCount} removed, ${syncResult.addedCount} added\n` +
-      `Checked old keys: ✅ Done\n` +
-      `⏳ All streams will start in ${delaySeconds} seconds\n` +
-      `🆕 New server delay: ${CONFIG.newServerDelay / 1000}s\n` +
-      `🔧 Crashed server delay: ${CONFIG.crashedServerDelay / 1000}s\n` +
-      `🔄 Auto-rotation: ${CONFIG.rotationInterval / (1000 * 60 * 60)} hours\n` +
-      `Bot commands: /info /status /restart /help`
-    );
+    log(`🚀 Stream Manager Started. API Items: ${apiItems.size}, Cache Entries: ${streamCache.size}, Sync Status: ${syncResult.removedCount} removed, ${syncResult.addedCount} added. Checked old keys: ✅ Done.`);
 
     // 5. Wait before starting all servers
     log(`⏳ Waiting ${delaySeconds} seconds before starting all servers...`);
@@ -1734,13 +1527,8 @@ async function boot() {
       log(`📊 Final report scheduled in 5 minutes`);
     }, CONFIG.initialDelay);
 
-    // 9. Start Telegram bot polling
-    telegramBotPolling();
-    log(`🤖 Telegram bot polling started`);
-
   } catch (error) {
     log(`❌ Boot failed: ${error.message}`);
-    await tg(`❌ <b>Stream Manager Boot Failed</b>\n${error.message}\n\nTry /restart to try again.`);
     setTimeout(boot, 60000);
   }
 }
@@ -1775,16 +1563,7 @@ async function checkAndRotateOldKeys() {
           streamCache.set(id, newCache);
           saveCache();
 
-          log(`✅ Created new stream key for ${item.name}`);
-
-          await tg(
-            `🔄 <b>AUTO-KEY ROTATION</b>\n\n` +
-            `<b>${item.name}</b>\n` +
-            `Old key age: ${ageHours.toFixed(2)} hours\n` +
-            `New key created and saved to cache\n` +
-            `DASH URL: <code>${newCache.dash}</code>\n` +
-            `Status: Will use new key when stream starts`
-          );
+          log(`✅ Created new stream key for ${item.name}. Old key age: ${ageHours.toFixed(2)} hours, New DASH URL: ${newCache.dash}`);
 
           // Update Facebook post on key rotation
           updateFacebookPost().catch((err) =>
@@ -1810,18 +1589,13 @@ async function checkAndRotateOldKeys() {
 
 async function gracefulShutdown() {
   systemState = "stopping";
-  telegramPollingActive = false;
   log("🛑 Shutting down gracefully...");
 
   if (startupTimer) {
     clearTimeout(startupTimer);
   }
 
-  await tg(
-    "🛑 <b>Stream Manager Shutting Down</b>\n" +
-    `Stopping ${activeStreams.size} active streams\n` +
-    `Cleaning up all timers`
-  );
+  log(`🛑 Stream Manager Shutting Down. Stopping ${activeStreams.size} active streams. Cleaning up all timers.`);
 
   restartTimers.forEach((timer, id) => {
     clearTimeout(timer);
