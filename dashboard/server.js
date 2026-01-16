@@ -43,29 +43,29 @@ app.use(session({
 // Authentication endpoint
 app.post('/api/login', (req, res) => {
     const { username, password } = req.body;
-    
+
     // Get credentials from environment variables
     const validUsername = process.env.ADMIN_USERNAME;
     const validPassword = process.env.ADMIN_PASSWORD;
-    
+
     if (!validUsername || !validPassword) {
-        return res.status(500).json({ 
-            success: false, 
-            message: 'Server configuration error' 
+        return res.status(500).json({
+            success: false,
+            message: 'Server configuration error'
         });
     }
-    
+
     if (username === validUsername && password === validPassword) {
         req.session.authenticated = true;
         req.session.username = username;
-        return res.json({ 
-            success: true, 
-            message: 'Login successful' 
+        return res.json({
+            success: true,
+            message: 'Login successful'
         });
     } else {
-        return res.status(401).json({ 
-            success: false, 
-            message: 'Invalid username or password' 
+        return res.status(401).json({
+            success: false,
+            message: 'Invalid username or password'
         });
     }
 });
@@ -74,22 +74,22 @@ app.post('/api/login', (req, res) => {
 app.post('/api/logout', (req, res) => {
     req.session.destroy((err) => {
         if (err) {
-            return res.status(500).json({ 
-                success: false, 
-                message: 'Logout failed' 
+            return res.status(500).json({
+                success: false,
+                message: 'Logout failed'
             });
         }
-        res.json({ 
-            success: true, 
-            message: 'Logged out successfully' 
+        res.json({
+            success: true,
+            message: 'Logged out successfully'
         });
     });
 });
 
 // Check authentication status
 app.get('/api/auth/status', (req, res) => {
-    res.json({ 
-        authenticated: req.session.authenticated === true 
+    res.json({
+        authenticated: req.session.authenticated === true
     });
 });
 
@@ -123,7 +123,7 @@ app.get('/api/channels', async (req, res) => {
     if (!req.session.authenticated) {
         return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
-    
+
     const channels = readChannels();
     res.json({ success: true, data: channels });
 });
@@ -133,13 +133,13 @@ app.post('/api/channels', (req, res) => {
     if (!req.session.authenticated) {
         return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
-    
+
     const { pageToken, channelName, channelSource, imageUrl } = req.body;
-    
+
     if (!pageToken || !channelName || !channelSource || !imageUrl) {
         return res.status(400).json({ success: false, message: 'All fields are required' });
     }
-    
+
     const channels = readChannels();
     const newChannel = {
         id: Date.now(),
@@ -149,9 +149,9 @@ app.post('/api/channels', (req, res) => {
         imageUrl,
         createdAt: new Date().toISOString()
     };
-    
+
     channels.push(newChannel);
-    
+
     if (writeChannels(channels)) {
         res.json({ success: true, data: newChannel });
     } else {
@@ -164,21 +164,21 @@ app.put('/api/channels/:id', (req, res) => {
     if (!req.session.authenticated) {
         return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
-    
+
     const channelId = parseInt(req.params.id);
     const { pageToken, channelName, channelSource, imageUrl } = req.body;
-    
+
     if (!pageToken || !channelName || !channelSource || !imageUrl) {
         return res.status(400).json({ success: false, message: 'All fields are required' });
     }
-    
+
     const channels = readChannels();
     const index = channels.findIndex(c => c.id === channelId);
-    
+
     if (index === -1) {
         return res.status(404).json({ success: false, message: 'Channel not found' });
     }
-    
+
     channels[index] = {
         ...channels[index],
         pageToken,
@@ -187,7 +187,7 @@ app.put('/api/channels/:id', (req, res) => {
         imageUrl,
         updatedAt: new Date().toISOString()
     };
-    
+
     if (writeChannels(channels)) {
         res.json({ success: true, data: channels[index] });
     } else {
@@ -200,17 +200,17 @@ app.delete('/api/channels/:id', (req, res) => {
     if (!req.session.authenticated) {
         return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
-    
+
     const channelId = parseInt(req.params.id);
     const channels = readChannels();
     const index = channels.findIndex(c => c.id === channelId);
-    
+
     if (index === -1) {
         return res.status(404).json({ success: false, message: 'Channel not found' });
     }
-    
+
     channels.splice(index, 1);
-    
+
     if (writeChannels(channels)) {
         res.json({ success: true, message: 'Channel deleted' });
     } else {
@@ -232,10 +232,10 @@ app.get('/api/script/status', (req, res) => {
     if (!req.session.authenticated) {
         return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
-    
+
     const isRunning = managedProcess !== null && managedProcess.killed === false;
-    res.json({ 
-        success: true, 
+    res.json({
+        success: true,
         running: isRunning,
         pid: isRunning ? managedProcess.pid : null
     });
@@ -246,57 +246,57 @@ app.post('/api/script/start', (req, res) => {
     if (!req.session.authenticated) {
         return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
-    
+
     if (managedProcess && managedProcess.killed === false) {
         return res.status(400).json({ success: false, message: 'Script is already running' });
     }
-    
+
     try {
         // Get script path from environment
         const scriptToRun = process.env.MANAGED_SCRIPT_PATH;
-        
+
         if (!scriptToRun) {
-            return res.status(400).json({ 
-                success: false, 
-                message: 'MANAGED_SCRIPT_PATH not configured in .env file' 
+            return res.status(400).json({
+                success: false,
+                message: 'MANAGED_SCRIPT_PATH not configured in .env file'
             });
         }
-        
+
         // Check if script file exists
         if (!fs.existsSync(scriptToRun)) {
-            return res.status(404).json({ 
-                success: false, 
-                message: `Script file not found: ${scriptToRun}` 
+            return res.status(404).json({
+                success: false,
+                message: `Script file not found: ${scriptToRun}`
             });
         }
-        
+
         addLog(`Starting script: ${scriptToRun}`, 'info');
-        
+
         managedProcess = spawn('node', [scriptToRun], {
             cwd: __dirname,
             stdio: ['ignore', 'pipe', 'pipe']
         });
-        
+
         managedProcess.stdout.on('data', (data) => {
             const output = data.toString();
             addLog(output, 'stdout');
         });
-        
+
         managedProcess.stderr.on('data', (data) => {
             const output = data.toString();
             addLog(output, 'stderr');
         });
-        
+
         managedProcess.on('exit', (code) => {
             addLog(`Script exited with code ${code}`, code === 0 ? 'info' : 'error');
             managedProcess = null;
         });
-        
+
         managedProcess.on('error', (error) => {
             addLog(`Script error: ${error.message}`, 'error');
             managedProcess = null;
         });
-        
+
         res.json({ success: true, message: 'Script started', pid: managedProcess.pid });
     } catch (error) {
         addLog(`Failed to start script: ${error.message}`, 'error');
@@ -309,15 +309,15 @@ app.post('/api/script/stop', (req, res) => {
     if (!req.session.authenticated) {
         return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
-    
+
     if (!managedProcess || managedProcess.killed) {
         return res.status(400).json({ success: false, message: 'Script is not running' });
     }
-    
+
     try {
         addLog('Stopping script...', 'info');
         managedProcess.kill('SIGTERM');
-        
+
         // Force kill after 5 seconds if still running
         setTimeout(() => {
             if (managedProcess && !managedProcess.killed) {
@@ -325,7 +325,7 @@ app.post('/api/script/stop', (req, res) => {
                 addLog('Script force killed', 'warning');
             }
         }, 5000);
-        
+
         res.json({ success: true, message: 'Script stop signal sent' });
     } catch (error) {
         addLog(`Failed to stop script: ${error.message}`, 'error');
@@ -338,10 +338,10 @@ app.post('/api/script/restart', async (req, res) => {
     if (!req.session.authenticated) {
         return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
-    
+
     try {
         addLog('Restarting script...', 'info');
-        
+
         // Stop if running
         if (managedProcess && !managedProcess.killed) {
             managedProcess.kill('SIGTERM');
@@ -352,7 +352,7 @@ app.post('/api/script/restart', async (req, res) => {
                         resolve();
                     }
                 }, 100);
-                
+
                 // Timeout after 5 seconds
                 setTimeout(() => {
                     clearInterval(checkInterval);
@@ -363,54 +363,54 @@ app.post('/api/script/restart', async (req, res) => {
                 }, 5000);
             });
         }
-        
+
         // Wait a bit before starting
         await new Promise(resolve => setTimeout(resolve, 1000));
-        
+
         // Start script
         const scriptToRun = process.env.MANAGED_SCRIPT_PATH;
-        
+
         if (!scriptToRun) {
-            return res.status(400).json({ 
-                success: false, 
-                message: 'MANAGED_SCRIPT_PATH not configured in .env file' 
+            return res.status(400).json({
+                success: false,
+                message: 'MANAGED_SCRIPT_PATH not configured in .env file'
             });
         }
-        
+
         if (!fs.existsSync(scriptToRun)) {
-            return res.status(404).json({ 
-                success: false, 
-                message: `Script file not found: ${scriptToRun}` 
+            return res.status(404).json({
+                success: false,
+                message: `Script file not found: ${scriptToRun}`
             });
         }
-        
+
         addLog(`Starting script: ${scriptToRun}`, 'info');
-        
+
         managedProcess = spawn('node', [scriptToRun], {
             cwd: __dirname,
             stdio: ['ignore', 'pipe', 'pipe']
         });
-        
+
         managedProcess.stdout.on('data', (data) => {
             const output = data.toString();
             addLog(output, 'stdout');
         });
-        
+
         managedProcess.stderr.on('data', (data) => {
             const output = data.toString();
             addLog(output, 'stderr');
         });
-        
+
         managedProcess.on('exit', (code) => {
             addLog(`Script exited with code ${code}`, code === 0 ? 'info' : 'error');
             managedProcess = null;
         });
-        
+
         managedProcess.on('error', (error) => {
             addLog(`Script error: ${error.message}`, 'error');
             managedProcess = null;
         });
-        
+
         res.json({ success: true, message: 'Script restarted', pid: managedProcess.pid });
     } catch (error) {
         addLog(`Failed to restart script: ${error.message}`, 'error');
@@ -423,10 +423,10 @@ app.get('/api/script/logs', (req, res) => {
     if (!req.session.authenticated) {
         return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
-    
+
     const limit = parseInt(req.query.limit) || 100;
     const logs = scriptLogs.slice(-limit);
-    
+
     res.json({ success: true, logs });
 });
 
@@ -435,7 +435,7 @@ app.post('/api/script/logs/clear', (req, res) => {
     if (!req.session.authenticated) {
         return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
-    
+
     scriptLogs = [];
     addLog('Logs cleared', 'info');
     res.json({ success: true, message: 'Logs cleared' });
@@ -473,4 +473,3 @@ app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
     console.log('Make sure your .env file is configured with ADMIN_USERNAME and ADMIN_PASSWORD');
 });
-
