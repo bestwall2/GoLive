@@ -5,13 +5,12 @@ import { spawn } from "child_process";
 // Node 24 includes global fetch; do NOT import node-fetch here
 import os from "os";
 import process from "process";
-
+import path from "path";
 import crypto from 'crypto';
 
 /* ================= CONFIG ================= */
 
 const CONFIG = {
-  streamsApi: "https://ani-box-nine.vercel.app/api/grok-chat",
   pollInterval: 20000,
   telegram: {
     botToken: "7971806903:AAHwpdNzkk6ClL3O17JVxZnp5e9uI66L9WE",
@@ -1351,32 +1350,35 @@ async function generateInfoReport() {
 
 async function fetchApiList() {
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
+    const filePath = path.join(process.cwd(), 'dashboard', 'channels.json');
+    if (!fs.existsSync(filePath)) {
+      log(`❌ Channels file not found: ${filePath}`);
+      return new Map();
+    }
 
-    const r = await fetch(CONFIG.streamsApi, {
-      signal: controller.signal
-    });
-
-    clearTimeout(timeout);
-    const j = await r.json();
+    const data = fs.readFileSync(filePath, 'utf8');
+    const channels = JSON.parse(data);
 
     const map = new Map();
-    if (j.data && Array.isArray(j.data)) {
-      j.data.forEach((streamData) => {
+    if (Array.isArray(channels)) {
+      channels.forEach((item) => {
+        // Map fields to match what ChaBot expects
+        const streamData = {
+          name: item.channelName,
+          token: item.pageToken,
+          source: item.channelSource,
+          img: item.imageUrl
+        };
         const id = generateStableId(streamData); // STABLE ID
         map.set(id, {
           id: id,
-          name: streamData.name,
-          token: streamData.token,
-          source: streamData.source,
-          img: streamData.img,
+          ...streamData
         });
       });
     }
     return map;
   } catch (error) {
-    log(`❌ Error fetching API list: ${error.message}`);
+    log(`❌ Error reading local channels: ${error.message}`);
     return new Map(); // Return empty map on error
   }
 }
