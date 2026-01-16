@@ -1184,77 +1184,12 @@ function formatTimeSinceCreation(itemId) {
   return formatUptime(age);
 }
 
-/* ================= SERVER INFO ================= */
+/* ================= STATUS REPORT FOR DASHBOARD ================= */
 
-function getServerInfo() {
-  const serverInfo = {
-    hostname: os.hostname(),
-    platform: process.platform,
-    arch: process.arch,
-    nodeVersion: process.version,
-    uptime: formatUptime(process.uptime() * 1000),
-    memory: {
-      used: `${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB`,
-      total: `${Math.round(os.totalmem() / 1024 / 1024)}MB`,
-    },
-    streams: {
-      active: activeStreams.size,
-      total: apiItems.size,
-      cached: streamCache.size,
-    },
-    time: new Date().toLocaleString(),
-    initialDelay: `${CONFIG.initialDelay / 1000} seconds`,
-    newServerDelay: `${CONFIG.newServerDelay / 1000} seconds`,
-    crashedServerDelay: `${CONFIG.crashedServerDelay / 1000} seconds (2 minutes)`,
-    rotationInterval: `${CONFIG.rotationInterval / (1000 * 60 * 60)} hours`,
-  };
+function sendStatusReport() {
+  let report = `🎬 <b>STREAM STATUS REPORT</b>\n`;
 
-  return serverInfo;
-}
-
-/* ================= INFO REPORT ================= */
-
-async function generateInfoReport() {
-  const serverInfo = getServerInfo();
-  const now = new Date();
-
-  let report = `📊 <b>SYSTEM STATUS REPORT</b>\n`;
-  report += `⏰ <i>${now.toLocaleString()}</i>\n\n`;
-
-  report += `🖥️ <b>Server Info:</b>\n`;
-  report += `• Host: ${serverInfo.hostname}\n`;
-  report += `• Platform: ${serverInfo.platform} (${serverInfo.arch})\n`;
-  report += `• Node.js: ${serverInfo.nodeVersion}\n`;
-  report += `• Server Uptime: ${serverInfo.uptime}\n`;
-  report += `• Memory: ${serverInfo.memory.used} / ${serverInfo.memory.total}\n`;
-  report += `• Initial Delay: ${serverInfo.initialDelay}\n`;
-  report += `• New Server Delay: ${serverInfo.newServerDelay}\n`;
-  report += `• Crashed Server Delay: ${serverInfo.crashedServerDelay}\n`;
-  report += `• Rotation: ${serverInfo.rotationInterval}\n\n`;
-
-  report += `📡 <b>Stream Stats:</b>\n`;
-  report += `• API Items: ${serverInfo.streams.total}\n`;
-  report += `• Cache Entries: ${serverInfo.streams.cached}\n`;
-  report += `• Active Streams: ${serverInfo.streams.active}\n`;
-
-  // Sync status
-  const syncStatus = serverInfo.streams.total === serverInfo.streams.cached ? "✅ Synced" : "⚠️ Out of sync";
-  report += `• Cache Sync: ${syncStatus}\n`;
-
-  if (serverInfo.streams.total !== serverInfo.streams.cached) {
-    const diff = Math.abs(serverInfo.streams.total - serverInfo.streams.cached);
-    report += `• Mismatch: ${diff} item(s)\n`;
-  }
-
-  report += `\n🎬 <b>Stream Status:</b>\n`;
-
-  let streamCount = 0;
   for (const [id, cache] of streamCache) {
-    if (streamCount >= 5) {
-      report += `\n... and ${streamCache.size - 5} more streams`;
-      break;
-    }
-
     const item = apiItems.get(id);
     const startTime = streamStartTimes.get(id);
     const state = serverStates.get(id);
@@ -1263,7 +1198,7 @@ async function generateInfoReport() {
     if (item) {
       const keyAge = formatTimeSinceCreation(id);
       const creationTime = cache.creationTime ?
-        new Date(cache.creationTime).toLocaleTimeString() : "Unknown";
+        new Date(cache.creationTime).toLocaleString() : "Unknown";
 
       report += `\n<b>${item.name}</b>\n`;
       report += `• Status: ${state || "unknown"}\n`;
@@ -1273,18 +1208,14 @@ async function generateInfoReport() {
       )}\n`;
       report += `• Key Age: ${keyAge} (created: ${creationTime})\n`;
       report += `• DASH: <code>${cache.dash}</code>\n`;
-
-      streamCount++;
     }
   }
 
-  if (streamCount === 0) {
-    report += `\nNo active streams.\n`;
+  if (streamCache.size === 0) {
+    report += `\nNo streams configured.\n`;
   }
 
-  report += `\n🔄 <i>Last checked: ${now.toLocaleTimeString()}</i>`;
-
-  return report;
+  log(report);
 }
 
 /* ================= API FETCH WITH STABLE IDS ================= */
@@ -1447,28 +1378,6 @@ async function watcher() {
   }
 }
 
-/* ================= FINAL CHECK ================= */
-
-async function finalCheckReport() {
-  if (activeStreams.size === 0) {
-    log("⚠️ No active streams detected. System is running but no streams are active.");
-    return;
-  }
-
-  const lines = [];
-  streamCache.forEach((v, id) => {
-    const item = apiItems.get(id);
-    const startTime = streamStartTimes.get(id);
-    const state = serverStates.get(id);
-    const keyAge = formatTimeSinceCreation(id);
-
-    lines.push(
-      `${item ? item.name : id} | Status: ${state || "unknown"} | Key Age: ${keyAge} | Uptime: ${formatUptime(startTime ? Date.now() - startTime : 0)}`
-    );
-  });
-
-  log(`📡 DASH REPORT:\n${lines.join("\n")}`);
-}
 
 /* ================= BOOT WITH PROPER SYNCHRONIZATION ================= */
 
@@ -1522,9 +1431,10 @@ async function boot() {
       setInterval(checkAndRotateOldKeys, 3600000);
       log(`🔍 Old key checker started (every hour)`);
 
-      // 8. Send final report
-      setTimeout(finalCheckReport, 300000);
-      log(`📊 Final report scheduled in 5 minutes`);
+      // 8. Start periodic status report
+      sendStatusReport();
+      setInterval(sendStatusReport, 60000);
+      log(`📊 Status reports started (every 60s)`);
     }, CONFIG.initialDelay);
 
   } catch (error) {
