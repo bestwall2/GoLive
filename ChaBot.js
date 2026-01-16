@@ -1187,7 +1187,11 @@ function formatTimeSinceCreation(itemId) {
 /* ================= STATUS REPORT FOR DASHBOARD ================= */
 
 function sendStatusReport() {
-  let report = `🎬 <b>STREAM STATUS REPORT</b>\n`;
+  const activeCount = activeStreams.size;
+  const totalCount = apiItems.size;
+
+  let report = `<b>Summary: Active: ${activeCount} | Total: ${totalCount}</b>\n`;
+  report += `------------------------------------------\n`;
 
   for (const [id, cache] of streamCache) {
     const item = apiItems.get(id);
@@ -1207,7 +1211,6 @@ function sendStatusReport() {
         startTime ? Date.now() - startTime : 0
       )}\n`;
       report += `• Key Age: ${keyAge} (created: ${creationTime})\n`;
-      report += `• DASH: <code>${cache.dash}</code>\n`;
     }
   }
 
@@ -1215,7 +1218,12 @@ function sendStatusReport() {
     report += `\nNo streams configured.\n`;
   }
 
-  log(report);
+  try {
+    const statusPath = path.join(process.cwd(), 'dashboard', 'status.txt');
+    fs.writeFileSync(statusPath, report, 'utf8');
+  } catch (err) {
+    log(`❌ Error writing status report: ${err.message}`);
+  }
 }
 
 /* ================= API FETCH WITH STABLE IDS ================= */

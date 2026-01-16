@@ -441,6 +441,24 @@ app.post('/api/script/logs/clear', (req, res) => {
     res.json({ success: true, message: 'Logs cleared' });
 });
 
+// Get status report from file
+app.get('/api/script/status-report', (req, res) => {
+    if (!req.session.authenticated) {
+        return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+    const statusFile = path.join(__dirname, 'status.txt');
+    if (fs.existsSync(statusFile)) {
+        try {
+            const report = fs.readFileSync(statusFile, 'utf8');
+            res.json({ success: true, report });
+        } catch (error) {
+            res.status(500).json({ success: false, message: 'Error reading status file' });
+        }
+    } else {
+        res.json({ success: true, report: 'في انتظار بيانات الحالة...' });
+    }
+});
+
 
 // Root route - redirect to login
 app.get('/', (req, res) => {
