@@ -336,7 +336,7 @@ async function checkScriptStatus() {
                 statusBadge.textContent = 'جاري التشغيل';
                 statusBadge.className = 'status-badge status-running';
             } else if (status === 'not_found' || data.message === 'Process not found' || data.message === 'PM2 or process not found') {
-                statusBadge.textContent = 'غير موجود / متوقف';
+                statusBadge.textContent = 'غير موجود (اضغط تشغيل لأول مرة)';
                 statusBadge.className = 'status-badge status-stopped';
             } else {
                 statusBadge.textContent = 'غير معروف';
