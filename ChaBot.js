@@ -17,7 +17,7 @@ const CONFIG = {
   pollInterval: 20000,
   initialDelay: 50000, // 50 seconds for ALL servers initial start
   newServerDelay: 30000, // 30 seconds for NEW servers
-  crashedServerDelay: 90000, // 1:30 minutes for CRASHED servers
+  crashedServerDelay: 30000, // 30 seconds for CRASHED servers
   rotationInterval: 13500000, // 3:45 hours in milliseconds
 
   // Connection orchestration
@@ -438,17 +438,18 @@ function buildInputArgsForSource(source) {
     return [
       "-user_agent", getUserAgent("default"),
       "-reconnect", "1",
+      "-reconnect_at_eof", "1",
       "-reconnect_streamed", "1",
+      "-reconnect_on_network_error", "1",
       "-reconnect_delay_max", "10",
       "-multiple_requests", "1",
       "-rw_timeout", "0",
       "-timeout", "0",
       "-fflags", "+genpts+igndts",
-      "-max_delay", "30000000", // 30 seconds buffer
+      "-max_delay", "10000000", // 10 seconds buffer
       "-thread_queue_size", "16384",
       "-analyzeduration", "10M",
       "-probesize", "10M",
-      "-itsoffset", "50",
       "-i", s
     ];
   } else {
@@ -456,7 +457,9 @@ function buildInputArgsForSource(source) {
     return [
       "-user_agent", getUserAgent("default"),
       "-reconnect", "1",
+      "-reconnect_at_eof", "1",
       "-reconnect_streamed", "1",
+      "-reconnect_on_network_error", "1",
       "-reconnect_delay_max", "15",
       "-rw_timeout", "0",
       "-timeout", "0",
@@ -666,6 +669,8 @@ async function startFFmpeg(item, force = false) {
     "-c:a", "copy",
     "-r", "30",
     "-f", "flv",
+    "-flvflags", "no_duration_filesize",
+    "-rtmp_live", "live",
     "-loglevel", "error",
     cache.stream_url
   ];
@@ -741,13 +746,37 @@ async function startFFmpeg(item, force = false) {
     for (const rawLine of lines) {
       const line = rawLine.trim();
       if (!line) continue;
+
+      // WATCHDOG: Detect fatal I/O and network errors
+      const fatalPatterns = [
+        "av_interleaved_write_frame()",
+        "Input/output error",
+        "Connection reset by peer",
+        "Broken pipe",
+        "Error opening output",
+        "failed to write",
+        "Operation not permitted",
+        "Permission denied",
+        "Connection refused"
+      ];
+
+      if (fatalPatterns.some(p => line.includes(p))) {
+        log(`🚨 FATAL ERROR detected for ${item.name}: "${line}". Forcing process kill to trigger restart.`);
+        try {
+          if (child) {
+            child.kill("SIGKILL");
+          }
+        } catch (e) {
+          log(`⚠️ Error killing FFmpeg after fatal error: ${e.message}`);
+        }
+        return;
+      }
+
       // Log relevant lines
       if (line.includes("buffer") || line.includes("queue") ||
         line.includes("speed") || line.includes("bitrate") ||
         line.includes("muxing") || line.includes("delay") ||
-        line.includes("Error opening output") ||
         line.includes("failed") || line.includes("Connection timed out") ||
-        line.includes("Connection reset by peer") ||
         line.toLowerCase().includes("error while writing") ||
         line.toLowerCase().includes("error")) {
         log(`📊 ${item.name} FFmpeg: ${line}`);
@@ -1401,6 +1430,10 @@ async function boot() {
       sendStatusReport();
       setInterval(sendStatusReport, 60000);
       log(`📊 Status reports started (every 60s)`);
+
+      // 9. Start watcher for live channel sync
+      setInterval(watcher, CONFIG.pollInterval);
+      log(`👁️ Watcher started (every ${CONFIG.pollInterval / 1000}s)`);
     }, CONFIG.initialDelay);
 
   } catch (error) {

@@ -26,9 +26,6 @@ function generateStableId(streamData) {
     return `item_${Math.abs(hash).toString(16).substring(0, 8)}`;
 }
 
-// External API configuration
-const EXTERNAL_API_URL = process.env.EXTERNAL_API_URL || 'https://ani-box-nine.vercel.app/api/grok-chat';
-
 // Script management
 let managedProcess = null;
 

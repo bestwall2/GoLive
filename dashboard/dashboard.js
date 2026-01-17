@@ -471,11 +471,11 @@ function renderLogs(logs) {
     logsContainer.innerHTML = logs.map(log => {
         const time = new Date(log.timestamp).toLocaleTimeString('ar-SA');
         const logClass = `log-entry log-${log.type}`;
-        // Replace newlines with <br> to preserve formatting in HTML
-        const messageWithBr = log.message.replace(/\n/g, '<br>');
+        // Escape HTML and replace newlines with <br>
+        const escapedMessage = escapeHtml(log.message).replace(/\n/g, '<br>');
         return `<div class="${logClass}">
             <span class="log-time">[${time}]</span>
-            <span class="log-message">${messageWithBr}</span>
+            <span class="log-message">${escapedMessage}</span>
         </div>`;
     }).join('');
     
