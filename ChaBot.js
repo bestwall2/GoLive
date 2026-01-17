@@ -35,7 +35,7 @@ const CONFIG = {
   // If enabled, when one stream that shares a token fails, other streams
   // with the same token are stopped and all are restarted together after
   // CONFIG.crashedServerDelay.
-  restartGroupOnTokenFailure: true,
+  restartGroupOnTokenFailure: false,
 
   // Facebook Post Configuration
   facebookPost: {
