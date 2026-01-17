@@ -31,8 +31,6 @@ const EXTERNAL_API_URL = process.env.EXTERNAL_API_URL || 'https://ani-box-nine.v
 
 // Script management
 let managedProcess = null;
-let scriptLogs = [];
-const MAX_LOGS = 1000;
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -254,15 +252,6 @@ app.delete('/api/channels/:id', (req, res) => {
     }
 });
 
-// Helper function to add log
-function addLog(message, type = 'info') {
-    const timestamp = new Date().toISOString();
-    scriptLogs.push({ timestamp, message, type });
-    if (scriptLogs.length > MAX_LOGS) {
-        scriptLogs.shift();
-    }
-}
-
 // Helper to get PM2 status
 function getPM2Status() {
     return new Promise((resolve) => {
@@ -305,15 +294,15 @@ app.post('/api/script/start', async (req, res) => {
         return res.status(400).json({ success: false, message: 'السكربت يعمل بالفعل' });
     }
 
-    const scriptPath = process.env.MANAGED_SCRIPT_PATH || '../ChaBot.js';
+    const rawScriptPath = process.env.MANAGED_SCRIPT_PATH || '../ChaBot.js';
+    const scriptPath = path.resolve(__dirname, rawScriptPath);
 
     // Check if pm2 is installed
     exec('command -v pm2', (pm2Error) => {
         if (pm2Error) {
-            addLog('PM2 not found. Attempting to install...', 'warning');
+            console.log('PM2 not found. Attempting to install...');
             exec('npm install -g pm2', (installError) => {
                 if (installError) {
-                    addLog(`Failed to install PM2: ${installError.message}`, 'error');
                     return res.status(500).json({ success: false, message: 'PM2 not found and installation failed' });
                 }
                 proceedWithStart();
@@ -325,19 +314,15 @@ app.post('/api/script/start', async (req, res) => {
 
     function proceedWithStart() {
         if (current.status === 'not_found') {
-            addLog('Starting new ChatBot process with PM2...', 'info');
             exec(`pm2 start ${scriptPath} --name ChatBot`, (err, stdout) => {
                 if (err) {
-                    addLog(`PM2 Start Error: ${err.message}`, 'error');
                     return res.status(500).json({ success: false, message: err.message });
                 }
                 res.json({ success: true, message: 'Script initialized and started via PM2' });
             });
         } else {
-            addLog('Starting existing ChatBot process...', 'info');
             exec('pm2 start ChatBot', (err, stdout) => {
                 if (err) {
-                    addLog(`PM2 Start Error: ${err.message}`, 'error');
                     return res.status(500).json({ success: false, message: err.message });
                 }
                 res.json({ success: true, message: 'Script started via PM2' });
@@ -357,13 +342,10 @@ app.post('/api/script/stop', async (req, res) => {
         return res.status(400).json({ success: false, message: 'السكربت متوقف بالفعل' });
     }
 
-    addLog('Stopping script with PM2...', 'info');
     exec('pm2 stop ChatBot', (error, stdout, stderr) => {
         if (error) {
-            addLog(`PM2 Stop Error: ${error.message}`, 'error');
             return res.status(500).json({ success: false, message: error.message });
         }
-        addLog(`PM2 Stop Output: ${stdout}`, 'info');
         res.json({ success: true, message: 'Script stopped via PM2' });
     });
 });
@@ -379,13 +361,10 @@ app.post('/api/script/restart', async (req, res) => {
         return res.status(400).json({ success: false, message: 'السكربت غير موجود للبدء، يرجى الضغط على تشغيل أولاً' });
     }
 
-    addLog('Restarting script with PM2...', 'info');
     exec('pm2 restart ChatBot', (error, stdout, stderr) => {
         if (error) {
-            addLog(`PM2 Restart Error: ${error.message}`, 'error');
             return res.status(500).json({ success: false, message: error.message });
         }
-        addLog(`PM2 Restart Output: ${stdout}`, 'info');
         res.json({ success: true, message: 'Script restarted via PM2' });
     });
 });
@@ -397,16 +376,28 @@ app.get('/api/script/logs', (req, res) => {
     }
 
     // Fetch last 15 lines of PM2 logs
-    exec('pm2 logs ChatBot --lines 15 --nostream', (error, stdout, stderr) => {
-        // PM2 logs command output might contain ANSI colors, but we'll return it as is
-        // Dashboard replaces \n with <br> already.
-
+    // Using --nostream and --raw to get clean output
+    exec('pm2 logs ChatBot --lines 15 --nostream --raw', (error, stdout, stderr) => {
+        const combined = (stdout || '') + (stderr || '');
         const timestamp = new Date().toISOString();
-        const logs = [{
+
+        if (!combined.trim()) {
+            return res.json({
+                success: true,
+                logs: [{ timestamp, message: 'لا توجد سجلات حالياً', type: 'stdout' }]
+            });
+        }
+
+        // Split by newline and filter empty lines
+        const lines = combined.split('\n')
+            .map(line => line.trim())
+            .filter(line => line.length > 0);
+
+        const logs = lines.map(line => ({
             timestamp,
-            message: stdout || stderr || 'No logs available',
-            type: error ? 'error' : 'stdout'
-        }];
+            message: line,
+            type: 'stdout'
+        }));
 
         res.json({ success: true, logs });
     });
@@ -418,9 +409,12 @@ app.post('/api/script/logs/clear', (req, res) => {
         return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
-    scriptLogs = [];
-    addLog('Logs cleared', 'info');
-    res.json({ success: true, message: 'Logs cleared' });
+    exec('pm2 flush ChatBot', (error) => {
+        if (error) {
+            return res.status(500).json({ success: false, message: 'Failed to clear logs' });
+        }
+        res.json({ success: true, message: 'Logs cleared' });
+    });
 });
 
 // Get status report from file
