@@ -297,11 +297,15 @@ function showToast(message, type = 'success') {
 
 // Script Management Functions
 let logsPollingInterval = null;
+let statusPollingInterval = null;
 
 function initializeScriptManagement() {
     checkScriptStatus();
+    loadStatusReport();
     // Check status every 5 seconds
     setInterval(checkScriptStatus, 5000);
+    // Poll status report every 10 seconds
+    statusPollingInterval = setInterval(loadStatusReport, 10000);
 }
 
 async function checkScriptStatus() {
@@ -415,6 +419,25 @@ async function loadLogs() {
         }
     } catch (error) {
         console.error('Error loading logs:', error);
+    }
+}
+
+async function loadStatusReport() {
+    try {
+        const response = await fetch(`${API_BASE}/api/script/status-report`, {
+            credentials: 'include'
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            const statusContainer = document.getElementById('statusReport');
+            if (data.report) {
+                // Replace newlines with <br> for display
+                statusContainer.innerHTML = data.report.replace(/\n/g, '<br>');
+            }
+        }
+    } catch (error) {
+        console.error('Error loading status report:', error);
     }
 }
 
