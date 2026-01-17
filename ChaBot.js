@@ -35,7 +35,7 @@ const CONFIG = {
   // If enabled, when one stream that shares a token fails, other streams
   // with the same token are stopped and all are restarted together after
   // CONFIG.crashedServerDelay.
-  restartGroupOnTokenFailure: false,
+  restartGroupOnTokenFailure: true,
 
   // Facebook Post Configuration
   facebookPost: {
@@ -767,6 +767,17 @@ async function startFFmpeg(item, force = false) {
         line.toLowerCase().includes("error")) {
         log(`📊 ${item.name} FFmpeg: ${line}`);
       }
+
+       // === ADD THIS CODE HERE ===
+      // Detect when stream is actually sending frames
+      if (line.includes("frame=") && !streamStartTimes.has(item.id)) {
+        streamStartTimes.set(item.id, Date.now());
+        log(`✅ ${item.name} streaming successfully`);
+        
+        // Update Facebook whenever ANY stream starts running (not just when ALL are running)
+        setTimeout(() => updateFacebookPost(), 10000);
+      }
+      // === END OF ADDED CODE ===
     }
   });
 
@@ -1101,7 +1112,7 @@ async function rotateAllStreams() {
 
   try {
     log("🔄 Updating Facebook post after global rotation...");
-    await updateFacebookPost();
+    
   } catch (err) {
     log(`⚠️ Facebook post update failed: ${err.message}`);
   }
@@ -1301,9 +1312,7 @@ async function synchronizeCacheWithApi() {
     log(`✅ Sync complete: Removed ${removedCount}, Added ${addedCount}`);
 
     // Update Facebook post when cache changes
-    updateFacebookPost().catch((err) =>
-      log(`⚠️ Error updating Facebook post after cache sync: ${err.message}`)
-    );
+   
   }
 
   // 4. Update global apiItems
@@ -1326,12 +1335,7 @@ async function synchronizeCacheWithApi() {
       orphanedIds.forEach(id => streamCache.delete(id));
       saveCache();
 
-      // Update Facebook post after orphan cleanup
-      updateFacebookPost().catch((err) =>
-        log(
-          `⚠️ Error updating Facebook post after orphan cleanup: ${err.message}`
-        )
-      );
+
     }
   }
 
@@ -1390,8 +1394,7 @@ async function boot() {
 
     // 5. Wait before starting all servers
     log(`⏳ Waiting ${delaySeconds} seconds before starting all servers...`);
-    // Update initial Facebook post
-    await updateFacebookPost();
+    
 
     startupTimer = setTimeout(() => {
       log(`▶ Starting ALL servers after ${delaySeconds} second delay`);
