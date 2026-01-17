@@ -224,7 +224,7 @@ function renderEntries() {
             <div class="entry-header">
                 <div class="entry-title">${escapeHtml(entry.channelName)}</div>
                 <div class="entry-actions">
-                    ${entry.dashUrl ? `<button class="btn btn-primary" onclick="copyStreamUrl('${escapeHtml(entry.dashUrl)}')">Copy Stream URL</button>` : ''}
+                    ${entry.dashUrl ? `<button class="btn btn-primary" onclick="copyStreamUrl('${escapeHtml(entry.dashUrl)}')">نسخ رابط البث</button>` : ''}
                     <button class="btn btn-success" onclick="editEntry(${entry.id})">تعديل</button>
                     <button class="btn btn-danger" onclick="deleteEntry(${entry.id})">حذف</button>
                 </div>
@@ -496,12 +496,43 @@ async function clearLogs() {
 
 // Copy Stream URL
 function copyStreamUrl(url) {
-    navigator.clipboard.writeText(url).then(() => {
-        showToast('تم نسخ رابط DASH بنجاح', 'success');
-    }).catch(err => {
-        console.error('Failed to copy:', err);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url).then(() => {
+            showToast('تم نسخ رابط DASH بنجاح', 'success');
+        }).catch(err => {
+            fallbackCopyTextToClipboard(url);
+        });
+    } else {
+        fallbackCopyTextToClipboard(url);
+    }
+}
+
+function fallbackCopyTextToClipboard(text) {
+    var textArea = document.createElement("textarea");
+    textArea.value = text;
+
+    // Avoid scrolling to bottom
+    textArea.style.top = "0";
+    textArea.style.left = "0";
+    textArea.style.position = "fixed";
+    textArea.style.opacity = "0";
+
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+
+    try {
+        var successful = document.execCommand('copy');
+        if (successful) {
+            showToast('تم نسخ رابط DASH بنجاح', 'success');
+        } else {
+            showToast('فشل نسخ الرابط', 'error');
+        }
+    } catch (err) {
         showToast('فشل نسخ الرابط', 'error');
-    });
+    }
+
+    document.body.removeChild(textArea);
 }
 
 // Make functions available globally
