@@ -224,6 +224,7 @@ function renderEntries() {
             <div class="entry-header">
                 <div class="entry-title">${escapeHtml(entry.channelName)}</div>
                 <div class="entry-actions">
+                    ${entry.dashUrl ? `<button class="btn btn-primary" onclick="copyStreamUrl('${escapeHtml(entry.dashUrl)}')">Copy Stream URL</button>` : ''}
                     <button class="btn btn-success" onclick="editEntry(${entry.id})">تعديل</button>
                     <button class="btn btn-danger" onclick="deleteEntry(${entry.id})">حذف</button>
                 </div>
@@ -493,6 +494,17 @@ async function clearLogs() {
     }
 }
 
+// Copy Stream URL
+function copyStreamUrl(url) {
+    navigator.clipboard.writeText(url).then(() => {
+        showToast('تم نسخ رابط DASH بنجاح', 'success');
+    }).catch(err => {
+        console.error('Failed to copy:', err);
+        showToast('فشل نسخ الرابط', 'error');
+    });
+}
+
 // Make functions available globally
 window.editEntry = editEntry;
 window.deleteEntry = deleteEntry;
+window.copyStreamUrl = copyStreamUrl;

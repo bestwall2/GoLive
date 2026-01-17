@@ -999,61 +999,16 @@ function stopFFmpeg(id, skipReport = false) {
 /* ================= SYSTEM RESTART ================= */
 
 async function restartSystem() {
-  if (isRestarting) {
-    log("⚠️ System is already restarting, skipping...");
-    return;
-  }
+  log("🔄 SYSTEM RESTART COMMAND RECEIVED - Executing PM2 restart...");
 
-  isRestarting = true;
-  log("🔄 SYSTEM RESTART COMMAND RECEIVED");
-
-  systemState = "restarting";
-
-  log("🔁 System Restart Initiated. Stopping all streams and cleaning up...");
-
-  // 1. Clean up ALL timers for each stream BEFORE stopping
-  log("🧹 Cleaning up all timers for each stream...");
-  for (const [id, item] of apiItems) {
-    cleanupTimersAfterRotation(id);
-  }
-
-  if (startupTimer) {
-    clearTimeout(startupTimer);
-  }
-
-  restartTimers.forEach((timer, id) => {
-    clearTimeout(timer);
+  const { exec } = await import("child_process");
+  exec("pm2 restart ChatBot", (error, stdout, stderr) => {
+    if (error) {
+      log(`❌ PM2 restart failed: ${error.message}`);
+      return;
+    }
+    log(`✅ PM2 restart initiated: ${stdout}`);
   });
-  restartTimers.clear();
-
-  // Clear group timers
-  for (const [token, t] of groupRestartTimers) {
-    clearTimeout(t);
-  }
-  groupRestartTimers.clear();
-
-  streamRotationTimers.forEach((timer, id) => {
-    clearTimeout(timer);
-  });
-  streamRotationTimers.clear();
-
-  for (const [id] of activeStreams) {
-    stopFFmpeg(id, true);
-  }
-
-  activeStreams.clear();
-  streamStartTimes.clear();
-  serverStates.clear();
-
-  await new Promise(r => setTimeout(r, 3000));
-
-  systemState = "running";
-  isRestarting = false;
-
-  log("🔄 Restarting system from scratch...");
-  log("✅ Cleanup Complete. Now booting up fresh system...");
-
-  boot();
 }
 
 
