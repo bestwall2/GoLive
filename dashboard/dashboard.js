@@ -318,12 +318,29 @@ async function checkScriptStatus() {
         
         if (data.success) {
             const statusBadge = document.getElementById('scriptStatus');
-            if (data.running) {
+            const status = data.status; // Get raw PM2 status
+
+            if (status === 'online') {
                 statusBadge.textContent = 'يعمل';
                 statusBadge.className = 'status-badge status-running';
-            } else {
+            } else if (status === 'stopping') {
+                statusBadge.textContent = 'جاري الإيقاف';
+                statusBadge.className = 'status-badge status-stopped';
+            } else if (status === 'stopped') {
                 statusBadge.textContent = 'متوقف';
                 statusBadge.className = 'status-badge status-stopped';
+            } else if (status === 'errored') {
+                statusBadge.textContent = 'خطأ في التشغيل';
+                statusBadge.className = 'status-badge status-stopped';
+            } else if (status === 'launching' || status === 'one-launch-status') {
+                statusBadge.textContent = 'جاري التشغيل';
+                statusBadge.className = 'status-badge status-running';
+            } else if (data.message === 'Process not found') {
+                statusBadge.textContent = 'غير موجود';
+                statusBadge.className = 'status-badge status-unknown';
+            } else {
+                statusBadge.textContent = 'غير معروف';
+                statusBadge.className = 'status-badge status-unknown';
             }
         }
     } catch (error) {
