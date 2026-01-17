@@ -224,7 +224,7 @@ function renderEntries() {
             <div class="entry-header">
                 <div class="entry-title">${escapeHtml(entry.channelName)}</div>
                 <div class="entry-actions">
-                    ${entry.dashUrl ? `<button class="btn btn-primary" onclick="copyStreamUrl('${escapeHtml(entry.dashUrl)}')">نسخ رابط البث</button>` : ''}
+                    <button class="btn btn-primary" onclick="copyStreamUrl('${escapeHtml(entry.dashUrl || '')}')">نسخ رابط البث</button>
                     <button class="btn btn-success" onclick="editEntry(${entry.id})">تعديل</button>
                     <button class="btn btn-danger" onclick="deleteEntry(${entry.id})">حذف</button>
                 </div>
@@ -513,6 +513,11 @@ async function clearLogs() {
 
 // Copy Stream URL
 function copyStreamUrl(url) {
+    if (!url || url === 'null') {
+        showToast('رابط البث غير جاهز بعد، يرجى تشغيل السكربت والانتظار قليلاً', 'error');
+        return;
+    }
+
     if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(url).then(() => {
             showToast('تم نسخ رابط DASH بنجاح', 'success');

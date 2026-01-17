@@ -1,8 +1,4 @@
-<b>Summary: Active: 1 | Total: 1</b>
+<b>Summary: Active: 0 | Total: 1</b>
 ------------------------------------------
 
-<b>beIN NEWS</b>
-• Status: running
-• Active: 🟢
-• Stream Uptime: 21m
-• Key Age: 21m 52s (created: 1/17/2026, 12:11:26 AM)
+No streams configured.

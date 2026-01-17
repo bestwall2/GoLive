@@ -294,7 +294,8 @@ app.post('/api/script/start', async (req, res) => {
         return res.status(400).json({ success: false, message: 'السكربت يعمل بالفعل' });
     }
 
-    const scriptPath = process.env.MANAGED_SCRIPT_PATH || '../ChaBot.js';
+    const rawScriptPath = process.env.MANAGED_SCRIPT_PATH || '../ChaBot.js';
+    const scriptPath = path.resolve(__dirname, rawScriptPath);
 
     // Check if pm2 is installed
     exec('command -v pm2', (pm2Error) => {
