@@ -335,9 +335,9 @@ async function checkScriptStatus() {
             } else if (status === 'launching' || status === 'one-launch-status') {
                 statusBadge.textContent = 'جاري التشغيل';
                 statusBadge.className = 'status-badge status-running';
-            } else if (data.message === 'Process not found') {
-                statusBadge.textContent = 'غير موجود';
-                statusBadge.className = 'status-badge status-unknown';
+            } else if (status === 'not_found' || data.message === 'Process not found' || data.message === 'PM2 or process not found') {
+                statusBadge.textContent = 'غير موجود / متوقف';
+                statusBadge.className = 'status-badge status-stopped';
             } else {
                 statusBadge.textContent = 'غير معروف';
                 statusBadge.className = 'status-badge status-unknown';
@@ -418,11 +418,11 @@ async function restartScript() {
 
 function startLogsPolling() {
     loadLogs();
-    // Poll logs every 2 seconds
+    // Poll logs every 1 minute
     if (logsPollingInterval) {
         clearInterval(logsPollingInterval);
     }
-    logsPollingInterval = setInterval(loadLogs, 2000);
+    logsPollingInterval = setInterval(loadLogs, 60000);
 }
 
 async function loadLogs() {
