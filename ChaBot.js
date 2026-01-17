@@ -1386,11 +1386,7 @@ async function boot() {
 
       log(`✅ Enqueued ${startedCount}/${apiItems.size} servers for start`);
 
-      // 6. Start periodic watcher
-      setInterval(watcher, CONFIG.pollInterval);
-      log(`🔍 Watcher started with ${CONFIG.pollInterval / 1000}s intervals`);
-
-      // 7. Start old key checker
+      // 6. Start old key checker
       setInterval(checkAndRotateOldKeys, 3600000);
       log(`🔍 Old key checker started (every hour)`);
 
