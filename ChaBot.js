@@ -35,7 +35,7 @@ const CONFIG = {
   // If enabled, when one stream that shares a token fails, other streams
   // with the same token are stopped and all are restarted together after
   // CONFIG.crashedServerDelay.
-  restartGroupOnTokenFailure: false,
+  restartGroupOnTokenFailure: true,
 
   // Facebook Post Configuration
   facebookPost: {
@@ -455,19 +455,24 @@ function buildInputArgsForSource(source) {
     ];
   } else {
     // HTTP progressive / .ts segments
-    return [
+    // --- Input Arguments (Robust Network Handling) ---
+    const inputArgs = [
       "-user_agent", getUserAgent("default"),
-      // --- Input Reliability ---
+      
+      // 1. Network Reliability
       "-reconnect", "1",
       "-reconnect_at_eof", "1",
       "-reconnect_streamed", "1",
       "-reconnect_on_network_error", "1",
-      "-reconnect_delay_max", "5",
+      "-reconnect_delay_max", "10",  // Increased to 10s for stubborn streams
       
-      // --- Buffer and Analysis ---
+      // 2. Buffer Safety
       "-analyzeduration", "10M",
       "-probesize", "10M",
-      "-thread_queue_size", "4096", // High buffer for network spikes
+      "-thread_queue_size", "4096",
+      
+      // 3. Flags to ignore bad input data (Vital for IPTV)
+      "-fflags", "+discardcorrupt", 
       "-i", s
     ];
   }
@@ -664,24 +669,32 @@ async function startFFmpeg(item, force = false) {
   const source = item.source || "";
   const inputArgs = buildInputArgsForSource(source);
 
-  // Output (minimal requested)
+  // --- Output Arguments (Encoding for Facebook Stability) ---
   const outputArgs = [
-    // --- Codecs (Passthrough) ---
-    "-c:v", "copy",
-    "-c:a", "copy",
+    // 1. Video Encoding (The Fix for "Input/output error")
+    "-c:v", "libx264",         // Encode video (Don't use copy)
+    "-preset", "veryfast",     // Low CPU usage
+    "-tune", "zerolatency",    // Critical for live streaming
+    "-pix_fmt", "yuv420p",     // Ensure color format compatibility
     
-    // --- Facebook Specific Output Fixes ---
+    // 2. Strict Bitrate & Frame Control (Facebook Requirements)
+    "-b:v", "2500k",           // Target bitrate (adjust based on your upload speed)
+    "-maxrate", "2500k",       // Cap bitrate to prevent spikes
+    "-bufsize", "5000k",       // Buffer size (2x maxrate)
+    "-r", "30",                // Force 30 FPS stability
+    "-g", "60",                // Keyframe interval exactly 2 seconds (30fps * 2s)
+    
+    // 3. Audio Encoding (AAC is mandatory)
+    "-c:a", "aac",
+    "-ar", "44100",
+    "-b:a", "128k",
+    
+    // 4. Output Protocol Flags
     "-f", "flv",
     "-flvflags", "no_duration_filesize",
-    "-rtmp_live", "live",
-    "-rtmp_buffer", "2000", // 2-second buffer for RTMPS overhead
     
-    // --- Critical Timestamp & Interleaving Fixes ---
-    "-fflags", "+genpts+discardcorrupt+igndts",
-    "-max_interleave_delta", "100M", // Prevents frame drops due to timestamp gaps
-    "-loglevel", "error",
-    // --- Secure Connection Timeouts ---
-    "-rw_timeout", "15000000", // 15 seconds (Facebook SSL can be slow)
+    // 5. Connection Keep-Alive
+    "-rw_timeout", "15000000", // 15s timeout
     cache.stream_url
   ];
 
