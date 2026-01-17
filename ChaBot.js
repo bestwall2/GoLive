@@ -17,7 +17,7 @@ const CONFIG = {
   pollInterval: 20000,
   initialDelay: 50000, // 50 seconds for ALL servers initial start
   newServerDelay: 30000, // 30 seconds for NEW servers
-  crashedServerDelay: 90000, // 1:30 minutes for CRASHED servers
+  crashedServerDelay: 45000, // 1:30 minutes for CRASHED servers
   rotationInterval: 13500000, // 3:45 hours in milliseconds
 
   // Connection orchestration
@@ -1404,8 +1404,8 @@ async function boot() {
 
       // 8. Start periodic status report
       sendStatusReport();
-      setInterval(sendStatusReport, 60000);
-      log(`📊 Status reports started (every 60s)`);
+      setInterval(sendStatusReport, 30000);
+      log(`📊 Status reports started (every 30s)`);
     }, CONFIG.initialDelay);
 
   } catch (error) {
