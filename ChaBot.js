@@ -1035,79 +1035,70 @@ function startRotationTimer(item) {
   log(`⏰ Rotation timer for ${item.name}: ${minutesLeft} minutes (${hoursLeft} hours) remaining`);
 
   const rotationTimer = setTimeout(async () => {
-    log(`🔄 Rotating stream key for ${item.name} (3:45 hours since creation)`);
-    await rotateStreamKey(item);
+    log(`🔄 Global rotation triggered by ${item.name} timer`);
+    await rotateAllStreams();
   }, timeUntilRotation);
 
   streamRotationTimers.set(item.id, rotationTimer);
 }
 
-let postRotationHealthTimer = null;
-
-
-
-async function rotateStreamKey(item) {
-  try {
-    log(`🔄 Starting rotation for ${item.name}`);
-    serverStates.set(item.id, "rotating");
-
-    stopFFmpeg(item.id, true);
-
-    const newCache = await createLiveWithTimestamp(item.token, item.name);
-    streamCache.set(item.id, newCache);
-    saveCache();
-    await updateFacebookPost();
-
-    const creationTimeFormatted = new Date(newCache.creationTime).toLocaleString();
-    log(`🔄 STREAM KEY ROTATED for ${item.name}. DASH URL: ${newCache.dash}, Created at: ${creationTimeFormatted}`);
-
-    // ✅ CLEAN UP TIMERS AFTER SUCCESSFUL ROTATION
-    cleanupTimersAfterRotation(item.id);
-
-    setTimeout(() => {
-      if (systemState === "running") startFFmpeg(item);
-    }, CONFIG.newServerDelay);
-
-  } catch (error) {
-    log(`❌ Rotation failed for ${item.name}: ${error.message}`);
-    serverStates.set(item.id, "failed");
-
-    // ✅ CLEAN UP TIMERS AFTER SUCCESSFUL ROTATION
-    cleanupTimersAfterRotation(item.id);
-
-    setTimeout(() => {
-      if (systemState === "running") rotateStreamKey(item);
-    }, 300_000);
-
-  } finally {
-    schedulePostRotationHealthCheck();
+async function rotateAllStreams() {
+  if (isRestarting) {
+    log("⚠️ Rotation/Restart already in progress, skipping redundant call.");
+    return;
   }
+  isRestarting = true;
+  systemState = "rotating";
+
+  log("🔄 Starting global rotation for ALL streams simultaneously...");
+
+  // Stop all active FFmpeg processes immediately
+  for (const [id, proc] of activeStreams) {
+    log(`⏹️ Stopping ${id} for global rotation`);
+    stopFFmpeg(id, true);
+  }
+  activeStreams.clear();
+
+  // Clear all existing timers
+  streamRotationTimers.forEach(t => clearTimeout(t));
+  streamRotationTimers.clear();
+  restartTimers.forEach(t => clearTimeout(t));
+  restartTimers.clear();
+
+  const now = Date.now();
+
+  // Rotate each stream sequentially to respect potential API limits
+  for (const [id, item] of apiItems) {
+    log(`🔄 Rotating ${item.name}...`);
+    serverStates.set(id, "rotating");
+    try {
+      const newCache = await createLiveWithTimestamp(item.token, item.name);
+      newCache.creationTime = now; // Synchronize ages
+      streamCache.set(id, newCache);
+      log(`✅ Successfully rotated ${item.name}`);
+    } catch (error) {
+      log(`❌ Failed to rotate ${item.name}: ${error.message}`);
+      // Even if one fails, we continue with others and still restart at the end
+    }
+  }
+
+  saveCache();
+
+  try {
+    log("🔄 Updating Facebook post after global rotation...");
+    await updateFacebookPost();
+  } catch (err) {
+    log(`⚠️ Facebook post update failed: ${err.message}`);
+  }
+
+  log("✅ Global rotation complete. Restarting system in 10s...");
+  await sleep(10000);
+  restartSystem();
 }
 
-// Debounced post-rotation health check
-function schedulePostRotationHealthCheck() {
-  if (postRotationHealthTimer) clearTimeout(postRotationHealthTimer);
-
-  log(`⏱️ Post-rotation health check scheduled in 15 minutes...`);
-
-  postRotationHealthTimer = setTimeout(() => {
-    postRotationHealthTimer = null;
-
-    if (systemState !== "running") return;
-
-    const activeCount = [...activeStreams.keys()].length;
-    const totalCount = apiItems.size;
-
-    log(`📊 Post-rotation health check: ${activeCount}/${totalCount} streams active`);
-
-    if (activeCount === 0 || activeCount < totalCount / 2) {
-      log(`🔴 Less than half active, performing one restart...`);
-      restartSystem(); // single restart
-    } else {
-      log(`✅ More than half active, no restart needed.`);
-    }
-
-  }, 15 * 60_000); // 15 minutes debounce
+async function rotateStreamKey(item) {
+  // Now simply triggers global rotation
+  await rotateAllStreams();
 }
 
 
@@ -1221,10 +1212,24 @@ async function fetchApiList() {
 /* ================= FULL CACHE SYNCHRONIZATION ================= */
 
 async function synchronizeCacheWithApi() {
+  if (isRestarting) {
+    log("⏳ System is currently rotating/restarting. Skipping synchronization until complete.");
+    return { removedCount: 0, addedCount: 0 };
+  }
+
   const newApiItems = await fetchApiList();
 
   log(`🔄 Starting cache synchronization...`);
   log(`📊 API: ${newApiItems.size} items, Cache: ${streamCache.size} entries`);
+
+  // Find existing creationTime to synchronize new servers
+  let referenceCreationTime = Date.now();
+  for (const [id, cache] of streamCache) {
+    if (cache.creationTime) {
+      referenceCreationTime = cache.creationTime;
+      break;
+    }
+  }
 
   // 1. Remove cache entries that no longer exist in API
   let removedCount = 0;
@@ -1258,12 +1263,14 @@ async function synchronizeCacheWithApi() {
   let addedCount = 0;
   for (const [id, item] of newApiItems) {
     if (!streamCache.has(id)) {
-      log(`🆕 Creating cache for: ${item.name}`);
+      log(`🆕 Creating cache for: ${item.name} (Wait for global rotation cycle)`);
       try {
         const newCache = await createLiveWithTimestamp(item.token, item.name);
+        // Align age with existing servers so it rotates at the same time
+        newCache.creationTime = referenceCreationTime;
         streamCache.set(id, newCache);
         addedCount++;
-        log(`✅ Created cache for ${item.name}`);
+        log(`✅ Created cache for ${item.name} with synchronized age.`);
       } catch (error) {
         log(`❌ Failed to create cache for ${item.name}: ${error.message}`);
         if (error.message.includes("TOKEN_ERROR")) {
@@ -1407,50 +1414,26 @@ async function boot() {
 async function checkAndRotateOldKeys() {
   log(`🔍 Checking for old stream keys (> ${CONFIG.rotationInterval / 1000 / 60 / 60} hours)...`);
 
-  let rotatedCount = 0;
   const now = Date.now();
+  let needsGlobalRotation = false;
 
   for (const [id, cache] of streamCache) {
     const item = apiItems.get(id);
     if (!item) continue;
 
     const age = now - cache.creationTime;
-    const ageHours = age / (1000 * 60 * 60);
-
     if (age >= CONFIG.rotationInterval) {
-      log(`🔄 Stream key for ${item.name} is ${ageHours.toFixed(2)} hours old (needs rotation)`);
-
-      const isStreaming = activeStreams.has(id);
-
-      if (isStreaming) {
-        log(`⏰ Rotating ${item.name} immediately (currently streaming)`);
-        await rotateStreamKey(item);
-      } else {
-        log(`⏰ Creating new key for ${item.name} (not currently streaming)`);
-        try {
-          const newCache = await createLiveWithTimestamp(item.token, item.name);
-          streamCache.set(id, newCache);
-          saveCache();
-
-          log(`✅ Created new stream key for ${item.name}. Old key age: ${ageHours.toFixed(2)} hours, New DASH URL: ${newCache.dash}`);
-
-          // Update Facebook post on key rotation
-          updateFacebookPost().catch((err) =>
-            log(
-              `⚠️ Error updating Facebook post after auto key rotation: ${err.message}`
-            )
-          );
-        } catch (error) {
-          log(`❌ Failed to rotate key for ${item.name}: ${error.message}`);
-        }
-      }
-
-      rotatedCount++;
+      log(`🔄 Found old stream key for ${item.name} (${(age / 3600000).toFixed(2)} hours old)`);
+      needsGlobalRotation = true;
+      break;
     }
   }
 
-  if (rotatedCount > 0) {
-    log(`✅ Rotated ${rotatedCount} old stream keys`);
+  if (needsGlobalRotation) {
+    log("⏰ Triggering global rotation because at least one key is old.");
+    await rotateAllStreams();
+  } else {
+    log("✅ All stream keys are currently within rotation interval.");
   }
 }
 
