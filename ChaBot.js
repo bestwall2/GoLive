@@ -438,13 +438,15 @@ function buildInputArgsForSource(source) {
     return [
       "-user_agent", getUserAgent("default"),
       "-reconnect", "1",
+      "-reconnect_at_eof", "1",
       "-reconnect_streamed", "1",
+      "-reconnect_on_network_error", "1",
       "-reconnect_delay_max", "10",
       "-multiple_requests", "1",
       "-rw_timeout", "0",
       "-timeout", "0",
       "-fflags", "+genpts+igndts",
-      "-max_delay", "30000000", // 30 seconds buffer
+      "-max_delay", "10000000", // 10 seconds buffer
       "-thread_queue_size", "16384",
       "-analyzeduration", "10M",
       "-probesize", "10M",
@@ -456,7 +458,9 @@ function buildInputArgsForSource(source) {
     return [
       "-user_agent", getUserAgent("default"),
       "-reconnect", "1",
+      "-reconnect_at_eof", "1",
       "-reconnect_streamed", "1",
+      "-reconnect_on_network_error", "1",
       "-reconnect_delay_max", "15",
       "-rw_timeout", "0",
       "-timeout", "0",
@@ -664,8 +668,9 @@ async function startFFmpeg(item, force = false) {
   const outputArgs = [
     "-c:v", "copy",
     "-c:a", "copy",
-    "-r", "30",
     "-f", "flv",
+    "-flvflags", "no_duration_filesize",
+    "-rtmp_live", "live",
     "-loglevel", "error",
     cache.stream_url
   ];
