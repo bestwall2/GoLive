@@ -456,7 +456,7 @@ function buildInputArgsForSource(source) {
   } else {
     // HTTP progressive / .ts segments
     // --- Input Arguments (Robust Network Handling) ---
-    const inputArgs = [
+    return = [
       "-user_agent", getUserAgent("default"),
       
       // 1. Network Reliability
