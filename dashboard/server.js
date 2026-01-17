@@ -12,6 +12,19 @@ dotenv.config();
 
 // JSON file path
 const DATA_FILE = path.join(__dirname, 'channels.json');
+const CACHE_FILE = path.join(__dirname, '..', 'streams_cache.json');
+
+/* ================= STABLE ID GENERATION ================= */
+function generateStableId(streamData) {
+    const str = `${streamData.name}|${streamData.source}`;
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        const char = str.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash;
+    }
+    return `item_${Math.abs(hash).toString(16).substring(0, 8)}`;
+}
 
 // External API configuration
 const EXTERNAL_API_URL = process.env.EXTERNAL_API_URL || 'https://ani-box-nine.vercel.app/api/grok-chat';
@@ -125,7 +138,30 @@ app.get('/api/channels', async (req, res) => {
     }
 
     const channels = readChannels();
-    res.json({ success: true, data: channels });
+
+    // Load cache to get DASH URLs
+    let cache = {};
+    try {
+        if (fs.existsSync(CACHE_FILE)) {
+            cache = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'));
+        }
+    } catch (e) {
+        console.error('Error reading cache file:', e);
+    }
+
+    // Attach DASH URLs to channels
+    const enhancedChannels = channels.map(channel => {
+        const stableId = generateStableId({
+            name: channel.channelName,
+            source: channel.channelSource
+        });
+        return {
+            ...channel,
+            dashUrl: cache[stableId] ? cache[stableId].dash : null
+        };
+    });
+
+    res.json({ success: true, data: enhancedChannels });
 });
 
 // Add new channel
@@ -247,61 +283,15 @@ app.post('/api/script/start', (req, res) => {
         return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
-    if (managedProcess && managedProcess.killed === false) {
-        return res.status(400).json({ success: false, message: 'Script is already running' });
-    }
-
-    try {
-        // Get script path from environment
-        const scriptToRun = process.env.MANAGED_SCRIPT_PATH;
-
-        if (!scriptToRun) {
-            return res.status(400).json({
-                success: false,
-                message: 'MANAGED_SCRIPT_PATH not configured in .env file'
-            });
+    addLog('Starting script with PM2...', 'info');
+    exec('pm2 start ChatBot', (error, stdout, stderr) => {
+        if (error) {
+            addLog(`PM2 Start Error: ${error.message}`, 'error');
+            return res.status(500).json({ success: false, message: error.message });
         }
-
-        // Check if script file exists
-        if (!fs.existsSync(scriptToRun)) {
-            return res.status(404).json({
-                success: false,
-                message: `Script file not found: ${scriptToRun}`
-            });
-        }
-
-        addLog(`Starting script: ${scriptToRun}`, 'info');
-
-        managedProcess = spawn('node', [scriptToRun], {
-            cwd: __dirname,
-            stdio: ['ignore', 'pipe', 'pipe']
-        });
-
-        managedProcess.stdout.on('data', (data) => {
-            const output = data.toString();
-            addLog(output, 'stdout');
-        });
-
-        managedProcess.stderr.on('data', (data) => {
-            const output = data.toString();
-            addLog(output, 'stderr');
-        });
-
-        managedProcess.on('exit', (code) => {
-            addLog(`Script exited with code ${code}`, code === 0 ? 'info' : 'error');
-            managedProcess = null;
-        });
-
-        managedProcess.on('error', (error) => {
-            addLog(`Script error: ${error.message}`, 'error');
-            managedProcess = null;
-        });
-
-        res.json({ success: true, message: 'Script started', pid: managedProcess.pid });
-    } catch (error) {
-        addLog(`Failed to start script: ${error.message}`, 'error');
-        res.status(500).json({ success: false, message: error.message });
-    }
+        addLog(`PM2 Start Output: ${stdout}`, 'info');
+        res.json({ success: true, message: 'Script started via PM2' });
+    });
 });
 
 // Stop script
@@ -310,112 +300,32 @@ app.post('/api/script/stop', (req, res) => {
         return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
-    if (!managedProcess || managedProcess.killed) {
-        return res.status(400).json({ success: false, message: 'Script is not running' });
-    }
-
-    try {
-        addLog('Stopping script...', 'info');
-        managedProcess.kill('SIGTERM');
-
-        // Force kill after 5 seconds if still running
-        setTimeout(() => {
-            if (managedProcess && !managedProcess.killed) {
-                managedProcess.kill('SIGKILL');
-                addLog('Script force killed', 'warning');
-            }
-        }, 5000);
-
-        res.json({ success: true, message: 'Script stop signal sent' });
-    } catch (error) {
-        addLog(`Failed to stop script: ${error.message}`, 'error');
-        res.status(500).json({ success: false, message: error.message });
-    }
+    addLog('Stopping script with PM2...', 'info');
+    exec('pm2 stop ChatBot', (error, stdout, stderr) => {
+        if (error) {
+            addLog(`PM2 Stop Error: ${error.message}`, 'error');
+            return res.status(500).json({ success: false, message: error.message });
+        }
+        addLog(`PM2 Stop Output: ${stdout}`, 'info');
+        res.json({ success: true, message: 'Script stopped via PM2' });
+    });
 });
 
 // Restart script
-app.post('/api/script/restart', async (req, res) => {
+app.post('/api/script/restart', (req, res) => {
     if (!req.session.authenticated) {
         return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
-    try {
-        addLog('Restarting script...', 'info');
-
-        // Stop if running
-        if (managedProcess && !managedProcess.killed) {
-            managedProcess.kill('SIGTERM');
-            await new Promise(resolve => {
-                const checkInterval = setInterval(() => {
-                    if (managedProcess.killed || !managedProcess) {
-                        clearInterval(checkInterval);
-                        resolve();
-                    }
-                }, 100);
-
-                // Timeout after 5 seconds
-                setTimeout(() => {
-                    clearInterval(checkInterval);
-                    if (managedProcess && !managedProcess.killed) {
-                        managedProcess.kill('SIGKILL');
-                    }
-                    resolve();
-                }, 5000);
-            });
+    addLog('Restarting script with PM2...', 'info');
+    exec('pm2 restart ChatBot', (error, stdout, stderr) => {
+        if (error) {
+            addLog(`PM2 Restart Error: ${error.message}`, 'error');
+            return res.status(500).json({ success: false, message: error.message });
         }
-
-        // Wait a bit before starting
-        await new Promise(resolve => setTimeout(resolve, 1000));
-
-        // Start script
-        const scriptToRun = process.env.MANAGED_SCRIPT_PATH;
-
-        if (!scriptToRun) {
-            return res.status(400).json({
-                success: false,
-                message: 'MANAGED_SCRIPT_PATH not configured in .env file'
-            });
-        }
-
-        if (!fs.existsSync(scriptToRun)) {
-            return res.status(404).json({
-                success: false,
-                message: `Script file not found: ${scriptToRun}`
-            });
-        }
-
-        addLog(`Starting script: ${scriptToRun}`, 'info');
-
-        managedProcess = spawn('node', [scriptToRun], {
-            cwd: __dirname,
-            stdio: ['ignore', 'pipe', 'pipe']
-        });
-
-        managedProcess.stdout.on('data', (data) => {
-            const output = data.toString();
-            addLog(output, 'stdout');
-        });
-
-        managedProcess.stderr.on('data', (data) => {
-            const output = data.toString();
-            addLog(output, 'stderr');
-        });
-
-        managedProcess.on('exit', (code) => {
-            addLog(`Script exited with code ${code}`, code === 0 ? 'info' : 'error');
-            managedProcess = null;
-        });
-
-        managedProcess.on('error', (error) => {
-            addLog(`Script error: ${error.message}`, 'error');
-            managedProcess = null;
-        });
-
-        res.json({ success: true, message: 'Script restarted', pid: managedProcess.pid });
-    } catch (error) {
-        addLog(`Failed to restart script: ${error.message}`, 'error');
-        res.status(500).json({ success: false, message: error.message });
-    }
+        addLog(`PM2 Restart Output: ${stdout}`, 'info');
+        res.json({ success: true, message: 'Script restarted via PM2' });
+    });
 });
 
 // Get logs
