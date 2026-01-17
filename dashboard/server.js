@@ -269,11 +269,38 @@ app.get('/api/script/status', (req, res) => {
         return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
-    const isRunning = managedProcess !== null && managedProcess.killed === false;
-    res.json({
-        success: true,
-        running: isRunning,
-        pid: isRunning ? managedProcess.pid : null
+    exec('pm2 show ChatBot --json', (error, stdout, stderr) => {
+        if (error) {
+            return res.json({
+                success: true,
+                running: false,
+                message: 'PM2 or process not found'
+            });
+        }
+
+        try {
+            const data = JSON.parse(stdout);
+            if (data.length > 0) {
+                const status = data[0].pm2_env.status;
+                return res.json({
+                    success: true,
+                    running: status === 'online',
+                    status: status
+                });
+            } else {
+                return res.json({
+                    success: true,
+                    running: false,
+                    message: 'Process not found'
+                });
+            }
+        } catch (e) {
+            return res.json({
+                success: true,
+                running: false,
+                message: 'Error parsing PM2 output'
+            });
+        }
     });
 });
 
@@ -283,15 +310,50 @@ app.post('/api/script/start', (req, res) => {
         return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
-    addLog('Starting script with PM2...', 'info');
-    exec('pm2 start ChatBot', (error, stdout, stderr) => {
-        if (error) {
-            addLog(`PM2 Start Error: ${error.message}`, 'error');
-            return res.status(500).json({ success: false, message: error.message });
+    const scriptPath = process.env.MANAGED_SCRIPT_PATH || '../ChaBot.js';
+
+    // Check if pm2 is installed
+    exec('command -v pm2', (pm2Error) => {
+        if (pm2Error) {
+            addLog('PM2 not found. Attempting to install...', 'warning');
+            exec('npm install -g pm2', (installError) => {
+                if (installError) {
+                    addLog(`Failed to install PM2: ${installError.message}`, 'error');
+                    return res.status(500).json({ success: false, message: 'PM2 not found and installation failed' });
+                }
+                proceedWithStart();
+            });
+        } else {
+            proceedWithStart();
         }
-        addLog(`PM2 Start Output: ${stdout}`, 'info');
-        res.json({ success: true, message: 'Script started via PM2' });
     });
+
+    function proceedWithStart() {
+        // Check if process already exists in PM2
+        exec('pm2 show ChatBot', (error) => {
+            if (error) {
+                // Doesn't exist, start new
+                addLog('Starting new ChatBot process with PM2...', 'info');
+                exec(`pm2 start ${scriptPath} --name ChatBot`, (err, stdout) => {
+                    if (err) {
+                        addLog(`PM2 Start Error: ${err.message}`, 'error');
+                        return res.status(500).json({ success: false, message: err.message });
+                    }
+                    res.json({ success: true, message: 'Script initialized and started via PM2' });
+                });
+            } else {
+                // Exists, just start it
+                addLog('Starting existing ChatBot process...', 'info');
+                exec('pm2 start ChatBot', (err, stdout) => {
+                    if (err) {
+                        addLog(`PM2 Start Error: ${err.message}`, 'error');
+                        return res.status(500).json({ success: false, message: err.message });
+                    }
+                    res.json({ success: true, message: 'Script started via PM2' });
+                });
+            }
+        });
+    }
 });
 
 // Stop script
