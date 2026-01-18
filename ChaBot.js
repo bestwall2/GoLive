@@ -465,8 +465,9 @@ function buildInputArgsForSource(source) {
       "-timeout", "0",
       "-analyzeduration", "5000000",
       "-probesize", "5000000",
-      "-fflags", "+genpts+discardcorrupt",
-      "-err_detect", "ignore_err",    
+      "-fflags", "+genpts+discardcorrupt+igndts+flush_packets", // Added flush_packets
+      "-err_detect", "ignore_err",
+      "-overrun_nonfatal", "1",           // Prevents crash if network stutters
       "-i", s
     ];
   }
@@ -666,13 +667,14 @@ async function startFFmpeg(item, force = false) {
  const outputArgs = [
     "-c:v", "copy",
     "-c:a", "copy",                // Go back to copy to save CPU
-    "-bsf:a", "aac_adtstoasc",     // Force the header fix
-    "-copyts",                     // IMPORTANT: Keep timestamps so FFmpeg doesn't panic
-    "-start_at_zero", 
-    "-muxdelay", "0",
-    "-max_interleave_delta", "0",
+    "-bsf:a", "aac_adtstoasc",          // Manually call the filter
+    "-copyts",                          // Essential for -c:a copy stability
+    "-avoid_negative_ts", "make_zero",  // Fixes the Facebook "I/O Error"
+    "-map", "0:v:0",                    // Explicitly map first video track
+    "-map", "0:a:0",                    // Explicitly map first audio track
     "-f", "flv",
     "-flvflags", "no_duration_filesize",
+    "-max_interleave_delta", "0",       // Forces FFmpeg to keep going despite sync errors
     "-loglevel", "error",
     cache.stream_url 
   ];
