@@ -678,7 +678,7 @@ async function startFFmpeg(item, force = false) {
     "-pix_fmt", "yuv420p",     // Ensure color format compatibility
     
     // 2. Strict Bitrate & Frame Control (Facebook Requirements)
-    "-b:v", "2500k",           // Target bitrate (adjust based on your upload speed)
+    "-b:v", "1500k",           // Target bitrate (adjust based on your upload speed)
     "-maxrate", "2500k",       // Cap bitrate to prevent spikes
     "-bufsize", "5000k",       // Buffer size (2x maxrate)
     "-r", "30",                // Force 30 FPS stability
@@ -688,7 +688,7 @@ async function startFFmpeg(item, force = false) {
     "-c:a", "aac",
     "-ar", "44100",
     "-b:a", "128k",
-    
+    "-loglevel", "error", 
     // 4. Output Protocol Flags
     "-f", "flv",
     "-flvflags", "no_duration_filesize",
@@ -783,7 +783,7 @@ async function startFFmpeg(item, force = false) {
 
        // === ADD THIS CODE HERE ===
       // Detect when stream is actually sending frames
-      if (line.includes("frame=") && !streamStartTimes.has(item.id)) {
+      if (line.includes("streaming successfully") && !streamStartTimes.has(item.id)) {
         streamStartTimes.set(item.id, Date.now());
         log(`✅ ${item.name} streaming successfully`);
         
