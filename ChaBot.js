@@ -666,10 +666,13 @@ async function startFFmpeg(item, force = false) {
   // Output (minimal requested)
   const outputArgs = [
     "-c:v", "copy",
-    "-c:a", "copy",
-    "-bsf:a", "aac_adtstoasc,setts=pts=PTS",
+    "-c:a", "aac",           // Change 'copy' to 'aac' to fix headers
+    "-b:a", "128k",          // Standard bitrate
+    "-ar", "44100",          // Standard sample rate for FLV
     "-r", "30",
     "-f", "flv",
+    "-flvflags", "no_duration_filesize", // FIX 1: Prevents the I/O error on headers
+    "-max_interleave_delta", "100k",      // FIX 2: Helps with A/V sync timing
     "-loglevel", "error",
     cache.stream_url
   ];
