@@ -455,24 +455,19 @@ function buildInputArgsForSource(source) {
     ];
   } else {
     // HTTP progressive / .ts segments
-    // --- Input Arguments (Robust Network Handling) ---
     return [
       "-user_agent", getUserAgent("default"),
-      
-      // 1. Network Reliability
+      // --- Input Reliability ---
       "-reconnect", "1",
       "-reconnect_at_eof", "1",
       "-reconnect_streamed", "1",
       "-reconnect_on_network_error", "1",
-      "-reconnect_delay_max", "10",  // Increased to 10s for stubborn streams
+      "-reconnect_delay_max", "5",
       
-      // 2. Buffer Safety
+      // --- Buffer and Analysis ---
       "-analyzeduration", "10M",
       "-probesize", "10M",
-      "-thread_queue_size", "4096",
-      
-      // 3. Flags to ignore bad input data (Vital for IPTV)
-      "-fflags", "+discardcorrupt", 
+      "-thread_queue_size", "4096", // High buffer for network spikes
       "-i", s
     ];
   }
@@ -669,32 +664,24 @@ async function startFFmpeg(item, force = false) {
   const source = item.source || "";
   const inputArgs = buildInputArgsForSource(source);
 
-  // --- Output Arguments (Encoding for Facebook Stability) ---
+  // Output (minimal requested)
   const outputArgs = [
-    // 1. Video Encoding (The Fix for "Input/output error")
-    "-c:v", "libx264",         // Encode video (Don't use copy)
-    "-preset", "veryfast",     // Low CPU usage
-    "-tune", "zerolatency",    // Critical for live streaming
-    "-pix_fmt", "yuv420p",     // Ensure color format compatibility
+    // --- Codecs (Passthrough) ---
+    "-c:v", "copy",
+    "-c:a", "copy",
     
-    // 2. Strict Bitrate & Frame Control (Facebook Requirements)
-    "-b:v", "1500k",           // Target bitrate (adjust based on your upload speed)
-    "-maxrate", "2500k",       // Cap bitrate to prevent spikes
-    "-bufsize", "5000k",       // Buffer size (2x maxrate)
-    "-r", "30",                // Force 30 FPS stability
-    "-g", "60",                // Keyframe interval exactly 2 seconds (30fps * 2s)
-    
-    // 3. Audio Encoding (AAC is mandatory)
-    "-c:a", "aac",
-    "-ar", "44100",
-    "-b:a", "128k",
-    "-loglevel", "error", 
-    // 4. Output Protocol Flags
+    // --- Facebook Specific Output Fixes ---
     "-f", "flv",
     "-flvflags", "no_duration_filesize",
+    "-rtmp_live", "live",
+    "-rtmp_buffer", "2000", // 2-second buffer for RTMPS overhead
     
-    // 5. Connection Keep-Alive
-    "-rw_timeout", "15000000", // 15s timeout
+    // --- Critical Timestamp & Interleaving Fixes ---
+    "-fflags", "+genpts+discardcorrupt+igndts",
+    "-max_interleave_delta", "100M", // Prevents frame drops due to timestamp gaps
+    "-loglevel", "error",
+    // --- Secure Connection Timeouts ---
+    "-rw_timeout", "15000000", // 15 seconds (Facebook SSL can be slow)
     cache.stream_url
   ];
 
@@ -780,17 +767,6 @@ async function startFFmpeg(item, force = false) {
         line.toLowerCase().includes("error")) {
         log(`📊 ${item.name} FFmpeg: ${line}`);
       }
-
-       // === ADD THIS CODE HERE ===
-      // Detect when stream is actually sending frames
-      if (line.includes("streaming successfully") && !streamStartTimes.has(item.id)) {
-        streamStartTimes.set(item.id, Date.now());
-        log(`✅ ${item.name} streaming successfully`);
-        
-        // Update Facebook whenever ANY stream starts running (not just when ALL are running)
-        setTimeout(() => updateFacebookPost(), 10000);
-      }
-      // === END OF ADDED CODE ===
     }
   });
 
@@ -1125,7 +1101,7 @@ async function rotateAllStreams() {
 
   try {
     log("🔄 Updating Facebook post after global rotation...");
-    
+    await updateFacebookPost();
   } catch (err) {
     log(`⚠️ Facebook post update failed: ${err.message}`);
   }
@@ -1325,7 +1301,9 @@ async function synchronizeCacheWithApi() {
     log(`✅ Sync complete: Removed ${removedCount}, Added ${addedCount}`);
 
     // Update Facebook post when cache changes
-   
+    updateFacebookPost().catch((err) =>
+      log(`⚠️ Error updating Facebook post after cache sync: ${err.message}`)
+    );
   }
 
   // 4. Update global apiItems
@@ -1348,7 +1326,12 @@ async function synchronizeCacheWithApi() {
       orphanedIds.forEach(id => streamCache.delete(id));
       saveCache();
 
-
+      // Update Facebook post after orphan cleanup
+      updateFacebookPost().catch((err) =>
+        log(
+          `⚠️ Error updating Facebook post after orphan cleanup: ${err.message}`
+        )
+      );
     }
   }
 
@@ -1407,7 +1390,8 @@ async function boot() {
 
     // 5. Wait before starting all servers
     log(`⏳ Waiting ${delaySeconds} seconds before starting all servers...`);
-    
+    // Update initial Facebook post
+    await updateFacebookPost();
 
     startupTimer = setTimeout(() => {
       log(`▶ Starting ALL servers after ${delaySeconds} second delay`);
