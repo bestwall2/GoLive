@@ -673,7 +673,7 @@ async function startFFmpeg(item, force = false) {
     "-max_interleave_delta", "0",
     "-f", "flv",
     "-flvflags", "no_duration_filesize",
-    "-loglevel", "error"
+    "-loglevel", "error",
     cache.stream_url 
   ];
 
