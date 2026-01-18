@@ -669,7 +669,7 @@ async function startFFmpeg(item, force = false) {
     "-c:a", "copy",
     "-r", "30",
     "-f", "flv",
-    "-loglevel", "error"
+    "-loglevel", "error",
     cache.stream_url
   ];
 
