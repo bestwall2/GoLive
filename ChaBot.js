@@ -460,14 +460,15 @@ function buildInputArgsForSource(source) {
       "-hide_banner",
       "-reconnect", "1",
       "-reconnect_streamed", "1",
+      "-reconnect_at_eof", "1",
       "-reconnect_delay_max", "15",
       "-rw_timeout", "0",
       "-timeout", "0",
+      "-thread_queue_size", "8192",       // THE FIX: Move before -i
       "-analyzeduration", "5000000",
       "-probesize", "5000000",
       "-fflags", "+genpts+discardcorrupt+igndts+flush_packets", // Added flush_packets
       "-err_detect", "ignore_err",
-      "-overrun_nonfatal", "1",           // Prevents crash if network stutters
       "-i", s
     ];
   }
@@ -675,7 +676,7 @@ async function startFFmpeg(item, force = false) {
     "-f", "flv",
     "-flvflags", "no_duration_filesize",
     "-max_interleave_delta", "0",       // Forces FFmpeg to keep going despite sync errors
-    //"-loglevel", "error",
+    "-loglevel", "warning",
     cache.stream_url 
   ];
 
