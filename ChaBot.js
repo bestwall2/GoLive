@@ -457,17 +457,16 @@ function buildInputArgsForSource(source) {
     // HTTP progressive / .ts segments
     return [
       "-user_agent", getUserAgent("default"),
-      // --- Input Reliability ---
+      "-hide_banner",
       "-reconnect", "1",
-      "-reconnect_at_eof", "1",
       "-reconnect_streamed", "1",
-      "-reconnect_on_network_error", "1",
-      "-reconnect_delay_max", "5",
-      
-      // --- Buffer and Analysis ---
-      "-analyzeduration", "10M",
-      "-probesize", "10M",
-      "-thread_queue_size", "4096", // High buffer for network spikes
+      "-reconnect_delay_max", "15",
+      "-rw_timeout", "0",
+      "-timeout", "0",
+      "-analyzeduration", "5000000",
+      "-probesize", "5000000",
+      "-fflags", "+genpts+discardcorrupt",
+      "-err_detect", "ignore_err",    
       "-i", s
     ];
   }
@@ -666,22 +665,11 @@ async function startFFmpeg(item, force = false) {
 
   // Output (minimal requested)
   const outputArgs = [
-    // --- Codecs (Passthrough) ---
     "-c:v", "copy",
     "-c:a", "copy",
-    
-    // --- Facebook Specific Output Fixes ---
+    "-r", "30",
     "-f", "flv",
-    "-flvflags", "no_duration_filesize",
-    "-rtmp_live", "live",
-    "-rtmp_buffer", "2000", // 2-second buffer for RTMPS overhead
-    
-    // --- Critical Timestamp & Interleaving Fixes ---
-    "-fflags", "+genpts+discardcorrupt+igndts",
-    "-max_interleave_delta", "100M", // Prevents frame drops due to timestamp gaps
-    "-loglevel", "error",
-    // --- Secure Connection Timeouts ---
-    "-rw_timeout", "15000000", // 15 seconds (Facebook SSL can be slow)
+    "-loglevel", "error"
     cache.stream_url
   ];
 
