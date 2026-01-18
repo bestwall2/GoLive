@@ -676,7 +676,8 @@ async function startFFmpeg(item, force = false) {
     "-f", "flv",
     "-flvflags", "no_duration_filesize",
     "-max_interleave_delta", "100k",
-    "-loglevel", "error"
+    "-loglevel", "error",
+    cache.stream_url 
   ];
 
   const args = [...inputArgs, ...outputArgs];
