@@ -675,7 +675,7 @@ async function startFFmpeg(item, force = false) {
     "-f", "flv",
     "-flvflags", "no_duration_filesize",
     "-max_interleave_delta", "0",       // Forces FFmpeg to keep going despite sync errors
-    "-loglevel", "error",
+    //"-loglevel", "error",
     cache.stream_url 
   ];
 
