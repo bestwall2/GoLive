@@ -667,6 +667,7 @@ async function startFFmpeg(item, force = false) {
   const outputArgs = [
     "-c:v", "copy",
     "-c:a", "copy",
+    "-bsf:a", "aac_adtstoasc,setts=pts=PTS",
     "-r", "30",
     "-f", "flv",
     "-loglevel", "error",
