@@ -665,18 +665,15 @@ async function startFFmpeg(item, force = false) {
 
  const outputArgs = [
     "-c:v", "copy",
-    "-c:a", "aac",
-    "-b:a", "128k",
-    "-ar", "44100",
-    "-r", "30",
-    // --- ADD THE TWO LINES BELOW ---
-    "-max_muxing_queue_size", "1024", 
-    "-flags", "+low_delay", 
-    // -------------------------------
+    "-c:a", "copy",                // Go back to copy to save CPU
+    "-bsf:a", "aac_adtstoasc",     // Force the header fix
+    "-copyts",                     // IMPORTANT: Keep timestamps so FFmpeg doesn't panic
+    "-start_at_zero", 
+    "-muxdelay", "0",
+    "-max_interleave_delta", "0",
     "-f", "flv",
     "-flvflags", "no_duration_filesize",
-    "-max_interleave_delta", "100k",
-    "-loglevel", "error",
+    "-loglevel", "error"
     cache.stream_url 
   ];
 
