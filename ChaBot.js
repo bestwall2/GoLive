@@ -663,18 +663,20 @@ async function startFFmpeg(item, force = false) {
   const source = item.source || "";
   const inputArgs = buildInputArgsForSource(source);
 
-  // Output (minimal requested)
-  const outputArgs = [
+ const outputArgs = [
     "-c:v", "copy",
-    "-c:a", "aac",           // Change 'copy' to 'aac' to fix headers
-    "-b:a", "128k",          // Standard bitrate
-    "-ar", "44100",          // Standard sample rate for FLV
+    "-c:a", "aac",
+    "-b:a", "128k",
+    "-ar", "44100",
     "-r", "30",
+    // --- ADD THE TWO LINES BELOW ---
+    "-max_muxing_queue_size", "1024", 
+    "-flags", "+low_delay", 
+    // -------------------------------
     "-f", "flv",
-    "-flvflags", "no_duration_filesize", // FIX 1: Prevents the I/O error on headers
-    "-max_interleave_delta", "100k",      // FIX 2: Helps with A/V sync timing
-    "-loglevel", "error",
-    cache.stream_url
+    "-flvflags", "no_duration_filesize",
+    "-max_interleave_delta", "100k",
+    "-loglevel", "error"
   ];
 
   const args = [...inputArgs, ...outputArgs];
