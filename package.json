@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Secure dashboard with environment-based authentication",
   "main": "server.js",
+  "type": "module",
   "scripts": {
     "start": "node dashboard/server.js",
     "dev": "nodemon dashboard/server.js"
