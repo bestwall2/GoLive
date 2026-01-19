@@ -1,11 +1,10 @@
 import makeWASocket, {
   useMultiFileAuthState,
-  DisconnectReason,
-  fetchLatestBaileysVersion
+  fetchLatestBaileysVersion,
+  DisconnectReason
 } from "@whiskeysockets/baileys";
 import Pino from "pino";
 
-let sock;
 let pairingRequested = false;
 
 async function startBot() {
@@ -14,12 +13,18 @@ async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState("auth");
   const { version } = await fetchLatestBaileysVersion();
 
-  sock = makeWASocket({
+  const sock = makeWASocket({
     version,
     auth: state,
-    logger: Pino({ level: "silent" }),
+    logger: Pino({ level: "debug" }), // مهم للتشخيص
     printQRInTerminal: false,
-    browser: ["Ubuntu VPS", "Chrome", "22.04"]
+
+    // 🔴 إعدادات إجبار الاتصال (مهمة على VPS)
+    browser: ["Ubuntu VPS", "Chrome", "22.04"],
+    connectTimeoutMs: 60_000,
+    keepAliveIntervalMs: 15_000,
+    defaultQueryTimeoutMs: 60_000,
+    markOnlineOnConnect: false,
   });
 
   sock.ev.on("creds.update", saveCreds);
@@ -27,7 +32,7 @@ async function startBot() {
   sock.ev.on("connection.update", async (update) => {
     const { connection, lastDisconnect } = update;
 
-    console.log("🔄 connection:", connection);
+    console.log("📡 connection.update event:", update);
 
     // ✅ اطلب Pairing Code فقط بعد OPEN
     if (
@@ -45,20 +50,21 @@ async function startBot() {
 
     if (connection === "close") {
       const reason = lastDisconnect?.error?.output?.statusCode;
-      console.log("❌ Closed. Reason:", reason);
+      console.log("❌ Connection closed. Reason:", reason);
 
       if (reason !== DisconnectReason.loggedOut) {
-        console.log("⏳ Waiting before reconnect...");
-        setTimeout(startBot, 10_000); // delay مهم
+        console.log("⏳ Reconnecting in 15s...");
+        setTimeout(startBot, 15_000);
       }
     }
   });
 
-  // 📩 استقبال الرسائل والرد
+  // 📩 استقبال الرسائل
   sock.ev.on("messages.upsert", async ({ messages }) => {
     const msg = messages[0];
     if (!msg?.message || msg.key.fromMe) return;
 
+    console.log("📩 Message received");
     await sock.sendMessage(msg.key.remoteJid, { text: "مشغل" });
   });
 }
