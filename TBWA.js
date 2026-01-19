@@ -1028,12 +1028,7 @@ async function startBot() {
       }
     }, 10 * 60 * 1000);
 
-    // Heartbeat to keep connection alive
-    setInterval(() => {
-      if (KnightBot) {
-        KnightBot.sendPresenceUpdate('available');
-      }
-    }, 30 * 1000);
+   
 
   } catch (error) {
     console.error('❌ خطأ في بدء البوت:', error);
