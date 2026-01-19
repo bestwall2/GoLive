@@ -1,57 +1,59 @@
-import makeWASocket, { useMultiFileAuthState, fetchLatestBaileysVersion } from "@whiskeysockets/baileys";
-import pino from "pino";
-import readline from "readline/promises";
-import { stdin as input, stdout as output } from "process";
+"use strict";
 
-// ----------------------- CONFIG -----------------------
-const config = {
-  session: "auth",
-  status: { terminal: true },
-  setPair: true,
-  pairingDelay: 5000 // ms
-};
-// ------------------------------------------------------
+const { Boom } = require("@hapi/boom");
+const {
+  makeWASocket,
+  useMultiFileAuthState,
+  fetchLatestBaileysVersion,
+  makeCacheableSignalKeyStore,
+  DisconnectReason,
+  jidDecode,
+  delay,
+  proto
+} = require("@whiskeysockets/baileys");
+import { Browsers } from "@whiskeysockets/baileys";
 
-const rl = readline.createInterface({ input, output });
+const pino = require("pino");
 
-const clientstart = async () => {
-  // 1️⃣ Auth state + version
-  const { state, saveCreds } = await useMultiFileAuthState(`./${config.session}`);
+// ------------------- CONFIG -------------------
+const PHONE_NUMBER = "212629996310"; // put your number here
+const SESSION_FOLDER = "@OpenWA";
+const PAIRING_DELAY = 5000; // 5 seconds before requesting pairing code
+const BROWSER = ["CHRO"];
+// ----------------------------------------------
+
+async function startBot() {
+  const { state, saveCreds } = await useMultiFileAuthState(SESSION_FOLDER);
   const { version } = await fetchLatestBaileysVersion();
 
-  // 2️⃣ Create socket with your browser config
   const sock = makeWASocket({
+    version,
     logger: pino({ level: "silent" }),
     printQRInTerminal: false,
-    auth: state,
-    version,
-    browser: ["Chrome (Linux)", "", ""]
+    browser: Browsers.ubuntu('CHROME'),
+    auth: {
+      creds: state.creds,
+      keys: makeCacheableSignalKeyStore(state.keys, pino({ level: "silent" }))
+    }
   });
 
-  // 3️⃣ Save credentials automatically
   sock.ev.on("creds.update", saveCreds);
 
-  // 4️⃣ Wait a bit before requesting pairing code
-  if (config.status.terminal && !sock.authState.creds.registered) {
-    console.log(`⏳ Waiting ${config.pairingDelay}ms before requesting Pairing Code...`);
-    await new Promise(res => setTimeout(res, config.pairingDelay));
-
-    const phoneNumber = await rl.question(
-      "📲 Please enter your WhatsApp number (e.g. 2126xxxxxxx):\n> "
-    );
+  // Wait before requesting pairing code
+  if (!sock.authState.creds.registered) {
+    console.log(`⏳ Waiting ${PAIRING_DELAY}ms before requesting Pairing Code...`);
+    await new Promise(res => setTimeout(res, PAIRING_DELAY));
 
     try {
-      const code = await sock.requestPairingCode(phoneNumber, config.setPair);
-      console.log(`🔑 Your Pairing Code: ${code}`);
+      const code = await sock.requestPairingCode(PHONE_NUMBER, true);
+      console.log(`🔑 Pairing Code: ${code.match(/.{1,4}/g).join("-")}`);
       console.log("➡️ Enter this code on WhatsApp → Linked Devices → Pair New Device");
     } catch (err) {
       console.error("❌ Failed to request Pairing Code:", err.message);
     }
-
-    rl.close();
   }
 
-  // 5️⃣ Auto-reply
+  // Auto-reply "مشغل"
   sock.ev.on("messages.upsert", async ({ messages }) => {
     const msg = messages[0];
     if (!msg?.message || msg.key.fromMe) return;
@@ -64,16 +66,18 @@ const clientstart = async () => {
     }
   });
 
-  // 6️⃣ Connection updates
+  // Connection updates
   sock.ev.on("connection.update", ({ connection, lastDisconnect }) => {
     console.log("🔄 connection.update:", connection);
-
     if (connection === "close") {
-      console.log("❌ Connection closed:", lastDisconnect?.error?.output?.statusCode);
-      setTimeout(clientstart, 15000); // reconnect after 15s
+      const status = new Boom(lastDisconnect?.error)?.output?.statusCode;
+      console.log(`❌ Connection closed, code: ${status}. Reconnecting...`);
+      setTimeout(startBot, 15000);
+    }
+    if (connection === "open") {
+      console.log(`✅ Logged in as ${sock.user?.name} (${sock.user?.id.split(":")[0]})`);
     }
   });
-};
+}
 
-// Start bot
-clientstart();
+startBot();
