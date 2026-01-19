@@ -456,33 +456,14 @@ function buildInputArgsForSource(source) {
   } else {
     // HTTP progressive / .ts segments
     return [
+      "-re",                              // READ AT NATIVE FRAMERATE - CRITICAL!
       "-user_agent", getUserAgent("default"),
-      "-hide_banner",
-      
-      // Reconnection - MORE AGGRESSIVE
       "-reconnect", "1",
       "-reconnect_streamed", "1",
-      "-reconnect_at_eof", "1",
-      "-reconnect_delay_max", "2",        // CHANGED: 2s not 15s
-      
-      // Timeout - MUST NOT BE TOO LONG
-      "-timeout", "5000000",              // CHANGED: 5s not 10s
-      "-rw_timeout", "5000000",           // CHANGED: 5s not 10s
-      
-      // Thread queue
-      "-thread_queue_size", "4096",       // CHANGED: 4096 is more stable
-      
-      // Analysis - FASTER
-      "-analyzeduration", "1000000",      // CHANGED: 1s for faster start
-      "-probesize", "3000000",            // CHANGED: 3MB lighter
-      
-      // Timing - SIMPLIFIED
-      "-fflags", "+genpts+discardcorrupt+nobuffer",  // REMOVED flush_packets
-      "-use_wallclock_as_timestamps", "1",
-      
-      // Error handling
-      "-err_detect", "ignore_err",
-       "-i", s
+      "-reconnect_delay_max", "2",
+      "-timeout", "5000000",
+      "-fflags", "+genpts+discardcorrupt+nobuffer",
+      "-i", s
     ];
   }
 }
@@ -679,34 +660,11 @@ async function startFFmpeg(item, force = false) {
   const inputArgs = buildInputArgsForSource(source);
 
  const outputArgs = [
-  "-c:v", "copy",
-  "-c:a", "copy",
-  "-bsf:a", "aac_adtstoasc",
-  
-  // TIMING FIX - Don't use -copyts with live streams
-  "-vsync", "passthrough",            // CHANGED: passthrough mode
-  "-start_at_zero",
-  "-avoid_negative_ts", "make_zero",
-  
-  "-map", "0:v:0?",                   // CHANGED: Added ? for optional
-  "-map", "0:a:0?",                   // CHANGED: Added ? for optional
-  
-  // FLV output
-  "-f", "flv",
-  "-flvflags", "no_duration_filesize",
-  
-  // CRITICAL BUFFER FIX - Prevents shutdown every 5 min
-  "-max_muxing_queue_size", "1024",   // ADDED: Prevents queue overflow
-  "-muxdelay", "0",                   // ADDED: No muxing delay
-  "-fflags", "+flush_packets",        // ADDED: Flush immediately
-  
-  // RTMP settings
-  "-rtmp_buffer", "1000",             // CHANGED: 1s not 5s (less buffering)
-  "-rtmp_live", "live",
-  "-rtmp_flush_interval", "100",      // ADDED: Flush every 100ms
-  
-  "-loglevel", "warning",
-  cache.stream_url 
+    "-c:v", "copy",
+    "-c:a", "copy",
+    "-bsf:a", "aac_adtstoasc",
+    "-f", "flv",
+    cache.stream_url 
   ];
 
   const args = [...inputArgs, ...outputArgs];
