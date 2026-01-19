@@ -458,17 +458,32 @@ function buildInputArgsForSource(source) {
     return [
       "-user_agent", getUserAgent("default"),
       "-hide_banner",
+      
+      // Reconnection settings (keep these)
       "-reconnect", "1",
       "-reconnect_streamed", "1",
       "-reconnect_at_eof", "1",
       "-reconnect_delay_max", "15",
-      "-rw_timeout", "0",
-      "-timeout", "0",
-      "-thread_queue_size", "8192",       // THE FIX: Move before -i
-      "-analyzeduration", "5000000",
-      "-probesize", "5000000",
-      "-fflags", "+genpts+discardcorrupt+igndts+flush_packets", // Added flush_packets
+      
+      // Timeout settings - CRITICAL FIX
+      "-timeout", "10000000",           // 10 seconds in microseconds (not 0!)
+      "-rw_timeout", "10000000",        // Read/Write timeout (not 0!)
+      
+      // Thread queue BEFORE -i (CORRECT position)
+      "-thread_queue_size", "8192",
+      
+      // Analysis settings - OPTIMIZED
+      "-analyzeduration", "3000000",    // 3s (was 5s - faster startup)
+      "-probesize", "5000000",          // Keep at 5MB
+      
+      // CRITICAL: Timing flags for MPEG-TS
+      "-fflags", "+genpts+discardcorrupt+nobuffer+flush_packets",
+      "-use_wallclock_as_timestamps", "1",  // IMPORTANT for live TS
+      
+      // Error handling
       "-err_detect", "ignore_err",
+      
+      // Input
       "-i", s
     ];
   }
@@ -666,17 +681,41 @@ async function startFFmpeg(item, force = false) {
   const inputArgs = buildInputArgsForSource(source);
 
  const outputArgs = [
+       // Video & Audio - Copy mode
     "-c:v", "copy",
-    "-c:a", "copy",                // Go back to copy to save CPU
-    "-bsf:a", "aac_adtstoasc",          // Manually call the filter
-    "-copyts",                          // Essential for -c:a copy stability
-    "-avoid_negative_ts", "make_zero",  // Fixes the Facebook "I/O Error"
-    "-map", "0:v:0",                    // Explicitly map first video track
-    "-map", "0:a:0",                    // Explicitly map first audio track
+    "-c:a", "copy",
+    
+    // CRITICAL: AAC bitstream filter for ADTS->ASC conversion
+    "-bsf:a", "aac_adtstoasc",
+    
+    // Timing fixes - ESSENTIAL for Facebook
+    "-copyts",                          // Preserve timestamps
+    "-start_at_zero",                   // Start at zero timestamp
+    "-avoid_negative_ts", "make_zero",  // Fix negative timestamps
+    
+    // Stream mapping - Explicit is better
+    "-map", "0:v:0",
+    "-map", "0:a:0",
+    
+    // CRITICAL: Async audio fix (helps with A/V sync)
+    "-async", "1",
+    
+    // FLV output format
     "-f", "flv",
-    "-flvflags", "no_duration_filesize",
-    "-max_interleave_delta", "0",       // Forces FFmpeg to keep going despite sync errors
+    "-flvflags", "no_duration_filesize+no_metadata",
+    
+    // Buffer management for live streaming
+    "-max_interleave_delta", "0",       // Handle sync errors gracefully
+    "-max_delay", "500000",             // 500ms max muxing delay
+    
+    // RTMP-specific optimizations
+    "-rtmp_buffer", "5000",             // 5 second RTMP buffer
+    "-rtmp_live", "live",               // Enable live mode
+    
+    // Logging
     "-loglevel", "warning",
+    
+    // Facebook RTMP URL
     cache.stream_url 
   ];
 
