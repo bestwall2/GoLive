@@ -1,4 +1,5 @@
 import fs from 'fs';
+import path from 'path';
 import pino from 'pino';
 import {
   makeWASocket,
@@ -7,7 +8,6 @@ import {
   makeCacheableSignalKeyStore,
   fetchLatestBaileysVersion,
   Browsers,
-  proto
 } from '@whiskeysockets/baileys';
 import pn from 'awesome-phonenumber';
 import { spawn } from 'child_process';
@@ -21,8 +21,44 @@ const MAX_RETRIES = 30000;
 // Ensure session folder exists
 if (!fs.existsSync(SESSION_DIR)) fs.mkdirSync(SESSION_DIR, { recursive: true });
 
-// Remove old session if needed
+// Check if session exists
+function sessionExists() {
+  const credsPath = path.join(SESSION_DIR, 'creds.json');
+  return fs.existsSync(credsPath);
+}
 
+// Remove session folder completely
+function removeSessionFolder() {
+  if (!fs.existsSync(SESSION_DIR)) return;
+  
+  console.log('🧹 Removing session folder...');
+  try {
+    const files = fs.readdirSync(SESSION_DIR);
+    for (const file of files) {
+      fs.unlinkSync(path.join(SESSION_DIR, file));
+    }
+    fs.rmdirSync(SESSION_DIR);
+    console.log('✅ Session folder removed');
+  } catch (error) {
+    console.error('❌ Error removing session:', error);
+  }
+}
+
+// Clear session but keep folder structure
+function clearSession() {
+  if (!fs.existsSync(SESSION_DIR)) return;
+  
+  console.log('🗑️ Clearing session data...');
+  try {
+    const files = fs.readdirSync(SESSION_DIR);
+    for (const file of files) {
+      fs.unlinkSync(path.join(SESSION_DIR, file));
+    }
+    console.log('✅ Session data cleared');
+  } catch (error) {
+    console.error('❌ Error clearing session:', error);
+  }
+}
 
 // ===== STREAM MANAGEMENT =====
 const registeredStreams = new Map();
@@ -457,6 +493,24 @@ async function handleCommand(message, sock) {
     return;
   }
 
+  // Logout command
+  if (text.startsWith('/logout') || text.startsWith('!logout') || text.startsWith('.logout')) {
+    clearSession();
+    await sendMessage(chatId, `🔓 *تم تسجيل الخروج*\n\nسيتم طلب QR جديد عند إعادة التشغيل.`, sock);
+    return;
+  }
+
+  // Session command
+  if (text.startsWith('/session') || text.startsWith('!session') || text.startsWith('.session')) {
+    const sessionStatus = sessionExists() ? "✅ *نشطة*" : "❌ *غير موجودة*";
+    await sendMessage(chatId, 
+      `📁 *حالة الجلسة:*\n\n` +
+      `🔐 *الحالة:* ${sessionStatus}\n` +
+      `📂 *المجلد:* ${SESSION_DIR}\n\n` +
+      `استخدم */logout* لحذف الجلسة الحالية`, sock);
+    return;
+  }
+
   // Add command
   if (text.startsWith('/add') || text.startsWith('!add') || text.startsWith('.add')) {
     const raw = text.substring(4).trim();
@@ -772,124 +826,238 @@ async function handleCommand(message, sock) {
 
 // ===== MAIN BOT =====
 async function startBot() {
-  const { state, saveCreds } = await useMultiFileAuthState(SESSION_DIR);
-
-  const phone = pn('+' + PHONE_NUMBER);
-  if (!phone.isValid()) {
-    console.error('❌ Invalid phone number');
-    return process.exit(1);
+  // Check session status
+  const hasExistingSession = sessionExists();
+  
+  if (hasExistingSession) {
+    console.log(`📂 جلسة موجودة في: ${SESSION_DIR}`);
+    console.log(`🔄 محاولة الاتصال باستخدام الجلسة المحفوظة...`);
+  } else {
+    console.log(`🆕 لا توجد جلسة سابقة، جاري إنشاء جلسة جديدة...`);
   }
 
-  const { version } = await fetchLatestBaileysVersion();
+  try {
+    const { state, saveCreds } = await useMultiFileAuthState(SESSION_DIR);
 
-  const KnightBot = makeWASocket({
-    version,
-    auth: {
-      creds: state.creds,
-      keys: makeCacheableSignalKeyStore(
-        state.keys,
-        pino({ level: 'fatal' }).child({ level: 'fatal' })
-      ),
-    },
-    printQRInTerminal: true,
-    logger: pino({ level: 'fatal' }).child({ level: 'fatal' }),
-    browser: Browsers.windows('Chrome'),
-    markOnlineOnConnect: false,
-    generateHighQualityLinkPreview: false,
-    defaultQueryTimeoutMs: 60000,
-    connectTimeoutMs: 60000,
-    keepAliveIntervalMs: 30000,
-    retryRequestDelayMs: 250,
-    maxRetries: 5,
-  });
-
-  // ===== CONNECTION EVENTS =====
-  KnightBot.ev.on('connection.update', async ({ connection, lastDisconnect }) => {
-    if (connection === 'open') {
-      console.log(`✅ Connected successfully as ${PHONE_NUMBER}`);
-      console.log('🤖 Stream Bot is now ready!');
-      console.log(`⚙️ Settings: Max Duration=${formatDuration(MAX_DURATION)}, Max Retries=${MAX_RETRIES}`);
+    const phone = pn('+' + PHONE_NUMBER);
+    if (!phone.isValid()) {
+      console.error('❌ رقم الهاتف غير صالح');
+      return process.exit(1);
     }
 
-    if (connection === 'close') {
-      const code = lastDisconnect?.error?.output?.statusCode;
-      if (code === 401) {
-        console.log('❌ Logged out. Removing session...');
-        removeSession(SESSION_DIR);
-      } else {
-        console.log('🔁 Connection closed unexpectedly. Reconnecting...');
-        await delay(3000);
-        startBot();
+    const { version } = await fetchLatestBaileysVersion();
+
+    const KnightBot = makeWASocket({
+      version,
+      auth: {
+        creds: state.creds,
+        keys: makeCacheableSignalKeyStore(
+          state.keys,
+          pino({ level: 'fatal' }).child({ level: 'fatal' })
+        ),
+      },
+      printQRInTerminal: !hasExistingSession, // Only show QR if no existing session
+      logger: pino({ level: 'fatal' }).child({ level: 'fatal' }),
+      browser: Browsers.windows('Chrome'),
+      markOnlineOnConnect: false,
+      generateHighQualityLinkPreview: false,
+      defaultQueryTimeoutMs: 60000,
+      connectTimeoutMs: 60000,
+      keepAliveIntervalMs: 30000,
+      retryRequestDelayMs: 250,
+      maxRetries: 5,
+    });
+
+    // ===== CONNECTION EVENTS =====
+    KnightBot.ev.on('connection.update', async ({ connection, lastDisconnect }) => {
+      if (connection === 'open') {
+        console.log(`✅ اتصل بنجاح باسم ${PHONE_NUMBER}`);
+        console.log('🤖 بوت البث جاهز الآن!');
+        console.log(`⚙️ الإعدادات: المدة القصوى=${formatDuration(MAX_DURATION)}, المحاولات القصوى=${MAX_RETRIES}`);
+        
+        // Send welcome message to saved chats
+        try {
+          const chats = await KnightBot.groupFetchAllParticipating();
+          for (const chat of Object.values(chats)) {
+            if (chat.id.endsWith('@g.us')) {
+              await sendMessage(chat.id, 
+                `🤖 *تم تشغيل بوت البث بنجاح!*\n\n` +
+                `استخدم */help* لرؤية جميع الأوامر المتاحة.`,
+                KnightBot
+              );
+            }
+          }
+        } catch (error) {
+          console.log('ℹ️ لا يمكن إرسال رسالة الترحيب للمجموعات');
+        }
       }
-    }
-  });
 
-  // ===== MESSAGE HANDLER =====
-  KnightBot.ev.on('messages.upsert', async ({ messages }) => {
-    for (const m of messages) {
-      if (!m.message || m.key.fromMe) continue;
-
-      const from = m.key.remoteJid;
+      if (connection === 'close') {
+        const code = lastDisconnect?.error?.output?.statusCode;
+        console.log(`🔌 انقطع الاتصال، الكود: ${code}`);
+        
+        if (code === 401) {
+          console.log('❌ تم تسجيل الخروج (401). جاري مسح الجلسة...');
+          clearSession();
+          console.log('🔄 إعادة تشغيل البوت...');
+          await delay(5000);
+          startBot();
+        } else if (code === 403) {
+          console.log('🚫 تم حظر الجهاز (403). جاري مسح الجلسة...');
+          clearSession();
+          console.log('🔄 إعادة تشغيل البوت...');
+          await delay(5000);
+          startBot();
+        } else {
+          console.log('🔁 الاتصال انقطع بشكل غير متوقع. جاري إعادة الاتصال...');
+          await delay(3000);
+          startBot();
+        }
+      }
       
-      // Only handle private chats (not groups)
-      if (!from.endsWith('@g.us')) {
-        await handleCommand(m, KnightBot);
+      if (connection === 'connecting') {
+        console.log('🔄 جاري الاتصال...');
       }
+    });
+
+    // ===== CREDENTIALS UPDATE =====
+    KnightBot.ev.on('creds.update', async () => {
+      try {
+        await saveCreds();
+        console.log('💾 تم حفظ بيانات الجلسة');
+      } catch (error) {
+        console.error('❌ فشل في حفظ بيانات الجلسة:', error);
+      }
+    });
+
+    // ===== MESSAGE HANDLER =====
+    KnightBot.ev.on('messages.upsert', async ({ messages }) => {
+      for (const m of messages) {
+        if (!m.message || m.key.fromMe) continue;
+
+        const from = m.key.remoteJid;
+        
+        // Only handle private chats (not groups)
+        if (!from.endsWith('@g.us')) {
+          await handleCommand(m, KnightBot);
+        }
+      }
+    });
+
+    // ===== PAIRING CODE IF NOT REGISTERED =====
+    if (!KnightBot.authState.creds.registered && !hasExistingSession) {
+      console.log('📱 جاري طلب رمز الاقتران...');
+      await delay(3000);
+      try {
+        let code = await KnightBot.requestPairingCode(PHONE_NUMBER);
+        code = code?.match(/.{1,4}/g)?.join('-') || code;
+        console.log(`📌 رمز الاقتران لـ ${PHONE_NUMBER}: ${code}`);
+        console.log('💡 يمكنك أيضًا مسح QR code من التطبيق');
+      } catch (err) {
+        console.error('❌ فشل في طلب رمز الاقتران:', err);
+      }
+    } else if (hasExistingSession) {
+      console.log('🔐 استخدام الجلسة المحفوظة...');
     }
-  });
 
-  KnightBot.ev.on('creds.update', saveCreds);
+    // ===== AUTO CLEANUP =====
+    setInterval(() => {
+      cleanupExpiredStreams();
+    }, 60 * 1000);
 
-  // ===== PAIRING CODE IF NOT REGISTERED =====
-  if (!KnightBot.authState.creds.registered) {
-    await delay(3000);
-    try {
-      let code = await KnightBot.requestPairingCode(PHONE_NUMBER);
-      code = code?.match(/.{1,4}/g)?.join('-') || code;
-      console.log(`📌 Pairing code for ${PHONE_NUMBER}: ${code}`);
-    } catch (err) {
-      console.error('❌ Failed to request pairing code:', err);
+    setInterval(() => {
+      const runningBefore = runningStreams.size;
+      const registeredBefore = registeredStreams.size;
+
+      const { cleanedRunning, cleanedRegistered } = cleanupExpiredStreams();
+
+      const runningAfter = runningStreams.size;
+      const registeredAfter = registeredStreams.size;
+
+      if (runningBefore !== runningAfter || registeredBefore !== registeredAfter) {
+        console.log(`🔄 تنظيف تلقائي: الجارية: ${runningBefore} → ${runningAfter}, المسجلة: ${registeredBefore} → ${registeredAfter}`);
+      }
+    }, 10 * 60 * 1000);
+
+    // Heartbeat to keep connection alive
+    setInterval(() => {
+      if (KnightBot) {
+        KnightBot.sendPresenceUpdate('available');
+      }
+    }, 30 * 1000);
+
+  } catch (error) {
+    console.error('❌ خطأ في بدء البوت:', error);
+    
+    // If it's a session error, clear and retry
+    if (error.message.includes('session') || error.message.includes('auth')) {
+      console.log('🔄 جلسة معطلة، جاري إنشاء جلسة جديدة...');
+      clearSession();
+      await delay(5000);
+      startBot();
     }
   }
-
-  // ===== AUTO CLEANUP =====
-  setInterval(() => {
-    cleanupExpiredStreams();
-  }, 60 * 1000);
-
-  setInterval(() => {
-    const runningBefore = runningStreams.size;
-    const registeredBefore = registeredStreams.size;
-
-    const { cleanedRunning, cleanedRegistered } = cleanupExpiredStreams();
-
-    const runningAfter = runningStreams.size;
-    const registeredAfter = registeredStreams.size;
-
-    if (runningBefore !== runningAfter || registeredBefore !== registeredAfter) {
-      console.log(`🔄 Auto-cleanup: Running: ${runningBefore} → ${runningAfter}, Registered: ${registeredBefore} → ${registeredAfter}`);
-    }
-  }, 10 * 60 * 1000);
 }
 
 // ===== START BOT =====
-startBot().catch(err => console.error('❌ Bot crashed:', err));
+console.log('🚀 بدء تشغيل بوت البث على WhatsApp...');
+console.log(`📱 الرقم: ${PHONE_NUMBER}`);
+console.log(`📂 مجلد الجلسة: ${SESSION_DIR}`);
+
+startBot().catch(err => {
+  console.error('❌ تحطم البوت:', err);
+  console.log('🔄 إعادة تشغيل خلال 10 ثواني...');
+  setTimeout(() => {
+    startBot();
+  }, 10000);
+});
 
 // Handle graceful shutdown
 process.on('SIGINT', () => {
-  console.log("\n🛑 Shutting down gracefully...");
+  console.log("\n🛑 إيقاف البوت بشكل آمن...");
   
   // Kill all running streams
+  console.log('🛑 إيقاف جميع البثوث الجارية...');
+  for (const [name, stream] of runningStreams.entries()) {
+    try {
+      console.log(`   إيقاف ${name}...`);
+      if (stream.process) {
+        stream.process.kill("SIGKILL");
+      }
+    } catch (e) {
+      console.error(`خطأ في إيقاف ${name}:`, e);
+    }
+  }
+  
+  console.log("✅ تم إيقاف جميع البثوث. مع السلامة!");
+  console.log("💾 تم حفظ الجلسة للمرة القادمة");
+  process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+  console.log("\n🔚 تلقي إشارة الإنهاء...");
+  
   for (const [name, stream] of runningStreams.entries()) {
     try {
       if (stream.process) {
         stream.process.kill("SIGKILL");
       }
     } catch (e) {
-      console.error(`Error killing stream ${name}:`, e);
+      console.error(`خطأ في إيقاف ${name}:`, e);
     }
   }
   
-  console.log("✅ All streams stopped. Goodbye!");
+  console.log("✅ إنهاء نظيف");
   process.exit(0);
+});
+
+// Handle uncaught errors
+process.on('uncaughtException', (error) => {
+  console.error('❌ خطأ غير معالج:', error);
+  stats.errors++;
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌ رفض غير معالج:', reason);
+  stats.errors++;
 });
