@@ -1,8 +1,5 @@
-import makeWASocket, {
-  useMultiFileAuthState,
-  fetchLatestBaileysVersion,
-  makeInMemoryStore
-} from "@whiskeysockets/baileys";
+import makeWASocket, { useMultiFileAuthState, fetchLatestBaileysVersion } from "@whiskeysockets/baileys";
+import { makeInMemoryStore } from "@whiskeysockets/baileys/lib/Stores/inMemory";
 import pino from "pino";
 import readline from "readline/promises";
 import { stdin as input, stdout as output } from "process";
@@ -20,24 +17,28 @@ const config = {
 const rl = readline.createInterface({ input, output });
 
 const clientstart = async () => {
+  // In-memory store
   const store = makeInMemoryStore({
     logger: pino().child({ level: "silent" })
   });
 
+  // Auth state + WhatsApp version
   const { state, saveCreds } = await useMultiFileAuthState(`./${config.session}`);
   const { version } = await fetchLatestBaileysVersion();
 
+  // Socket
   const client = makeWASocket({
     logger: pino({ level: "silent" }),
     printQRInTerminal: false,
     auth: state,
     version,
-    browser: ["Ubuntu", "Chrome", "20.0.00"] // 🔹 your requested browser
+    browser: ["Ubuntu", "Chrome", "20.0.00"] // your requested browser
   });
 
   client.ev.on("creds.update", saveCreds);
   store.bind(client.ev);
 
+  // Pairing code prompt
   if (config.status.terminal && !client.authState.creds.registered) {
     const phoneNumber = await rl.question(
       "📲 Please enter your WhatsApp number (e.g. 2126xxxxxxx):\n> "
@@ -54,6 +55,7 @@ const clientstart = async () => {
     rl.close();
   }
 
+  // Auto-reply
   client.ev.on("messages.upsert", async ({ messages }) => {
     const msg = messages[0];
     if (!msg?.message || msg.key.fromMe) return;
@@ -66,15 +68,17 @@ const clientstart = async () => {
     }
   });
 
+  // Connection updates
   client.ev.on("connection.update", (update) => {
     const { connection, lastDisconnect } = update;
     console.log("🔄 connection.update:", connection);
 
     if (connection === "close") {
       console.log("❌ Connection closed:", lastDisconnect?.error?.output?.statusCode);
-      setTimeout(clientstart, 15000); // reconnect after 15s
+      setTimeout(clientstart, 15000); // reconnect
     }
   });
 };
 
+// Start bot
 clientstart();
