@@ -1,9 +1,8 @@
 import makeWASocket, {
   useMultiFileAuthState,
   fetchLatestBaileysVersion,
-  DisconnectReason
+  Browsers
 } from "@whiskeysockets/baileys";
-import Pino from "pino";
 
 let pairingRequested = false;
 
@@ -14,9 +13,8 @@ async function startBot() {
   const sock = makeWASocket({
     version,
     auth: state,
-    logger: Pino({ level: "debug" }),
     printQRInTerminal: false,
-    browser: ["Ubuntu VPS", "Chrome", "22.04"]
+    browser: Browsers.macOS("Google Chrome") // ✅ required for Pairing Code
   });
 
   sock.ev.on("creds.update", saveCreds);
@@ -25,24 +23,17 @@ async function startBot() {
     const { connection, lastDisconnect } = update;
     console.log("🔄 connection.update:", connection);
 
-    if (
-      connection === "open" &&
-      !sock.authState.creds.registered &&
-      !pairingRequested
-    ) {
+    if (connection === "open" && !sock.authState.creds.registered && !pairingRequested) {
       pairingRequested = true;
-      const phoneNumber = "212629996310"; // your number without +
+      const phoneNumber = "212629996310"; // without '+'
       const code = await sock.requestPairingCode(phoneNumber);
       console.log("🔑 Pairing Code:", code);
-      console.log("➡️ Enter it on your phone under WhatsApp → Linked Devices → Pair New Device");
+      console.log("➡️ Enter it in WhatsApp → Linked Devices → Pair New Device");
     }
 
     if (connection === "close") {
-      const reason = lastDisconnect?.error?.output?.statusCode;
-      console.log("❌ Connection closed. Reason:", reason);
-      if (reason !== DisconnectReason.loggedOut) {
-        setTimeout(startBot, 15000);
-      }
+      console.log("❌ Connection closed:", lastDisconnect?.error?.output?.statusCode);
+      setTimeout(startBot, 15000);
     }
   });
 
