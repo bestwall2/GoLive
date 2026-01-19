@@ -17,7 +17,7 @@ const PHONE_NUMBER = '212629996310'; // Replace with your number
 const SESSION_DIR = `./session-${PHONE_NUMBER}`;
 const MAX_DURATION = 4 * 60 * 60 * 1000; // 4 hours default
 const MAX_RETRIES = 30000;
-const ONLY_ALLOWED_NUMBER = '212681718430';
+const ONLY_ALLOWED_NUMBER = '269835950931970@lid';
 
 // Ensure session folder exists
 if (!fs.existsSync(SESSION_DIR)) fs.mkdirSync(SESSION_DIR, { recursive: true });
@@ -976,11 +976,11 @@ async function startBot() {
          // const senderNumber = normalizeNumber(senderRaw);
       
           // ❌ block everyone except one number
-          //if (senderNumber !== ONLY_ALLOWED_NUMBER) {
+          if (from !== ONLY_ALLOWED_NUMBER) {
             // optional: reply once then ignore forever
             // await KnightBot.sendMessage(from, { text: '❌ Access denied.' });
-         //   continue;
-       //   }
+            continue;
+          }
       
           // ✅ only this number reaches the bot
           await handleCommand(m, KnightBot);
