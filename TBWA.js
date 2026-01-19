@@ -1,5 +1,4 @@
 import makeWASocket, { useMultiFileAuthState, fetchLatestBaileysVersion } from "@whiskeysockets/baileys";
-import { makeInMemoryStore } from "@whiskeysockets/baileys/lib/Stores/inMemory";
 import pino from "pino";
 import readline from "readline/promises";
 import { stdin as input, stdout as output } from "process";
@@ -7,9 +6,7 @@ import { stdin as input, stdout as output } from "process";
 // ----------------------- CONFIG -----------------------
 const config = {
   session: "auth",
-  status: {
-    terminal: true
-  },
+  status: { terminal: true },
   setPair: true
 };
 // ------------------------------------------------------
@@ -17,11 +14,6 @@ const config = {
 const rl = readline.createInterface({ input, output });
 
 const clientstart = async () => {
-  // In-memory store
-  const store = makeInMemoryStore({
-    logger: pino().child({ level: "silent" })
-  });
-
   // Auth state + WhatsApp version
   const { state, saveCreds } = await useMultiFileAuthState(`./${config.session}`);
   const { version } = await fetchLatestBaileysVersion();
@@ -35,10 +27,10 @@ const clientstart = async () => {
     browser: ["Ubuntu", "Chrome", "20.0.00"] // your requested browser
   });
 
+  // Save creds automatically
   client.ev.on("creds.update", saveCreds);
-  store.bind(client.ev);
 
-  // Pairing code prompt
+  // Pairing code
   if (config.status.terminal && !client.authState.creds.registered) {
     const phoneNumber = await rl.question(
       "📲 Please enter your WhatsApp number (e.g. 2126xxxxxxx):\n> "
@@ -69,10 +61,8 @@ const clientstart = async () => {
   });
 
   // Connection updates
-  client.ev.on("connection.update", (update) => {
-    const { connection, lastDisconnect } = update;
+  client.ev.on("connection.update", ({ connection, lastDisconnect }) => {
     console.log("🔄 connection.update:", connection);
-
     if (connection === "close") {
       console.log("❌ Connection closed:", lastDisconnect?.error?.output?.statusCode);
       setTimeout(clientstart, 15000); // reconnect
