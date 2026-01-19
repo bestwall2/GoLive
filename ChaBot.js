@@ -459,32 +459,30 @@ function buildInputArgsForSource(source) {
       "-user_agent", getUserAgent("default"),
       "-hide_banner",
       
-      // Reconnection settings (keep these)
+      // Reconnection - MORE AGGRESSIVE
       "-reconnect", "1",
       "-reconnect_streamed", "1",
       "-reconnect_at_eof", "1",
-      "-reconnect_delay_max", "15",
+      "-reconnect_delay_max", "2",        // CHANGED: 2s not 15s
       
-      // Timeout settings - CRITICAL FIX
-      "-timeout", "10000000",           // 10 seconds in microseconds (not 0!)
-      "-rw_timeout", "10000000",        // Read/Write timeout (not 0!)
+      // Timeout - MUST NOT BE TOO LONG
+      "-timeout", "5000000",              // CHANGED: 5s not 10s
+      "-rw_timeout", "5000000",           // CHANGED: 5s not 10s
       
-      // Thread queue BEFORE -i (CORRECT position)
-      "-thread_queue_size", "8192",
+      // Thread queue
+      "-thread_queue_size", "4096",       // CHANGED: 4096 is more stable
       
-      // Analysis settings - OPTIMIZED
-      "-analyzeduration", "3000000",    // 3s (was 5s - faster startup)
-      "-probesize", "5000000",          // Keep at 5MB
+      // Analysis - FASTER
+      "-analyzeduration", "1000000",      // CHANGED: 1s for faster start
+      "-probesize", "3000000",            // CHANGED: 3MB lighter
       
-      // CRITICAL: Timing flags for MPEG-TS
-      "-fflags", "+genpts+discardcorrupt+nobuffer+flush_packets",
-      "-use_wallclock_as_timestamps", "1",  // IMPORTANT for live TS
+      // Timing - SIMPLIFIED
+      "-fflags", "+genpts+discardcorrupt+nobuffer",  // REMOVED flush_packets
+      "-use_wallclock_as_timestamps", "1",
       
       // Error handling
       "-err_detect", "ignore_err",
-      
-      // Input
-      "-i", s
+       "-i", s
     ];
   }
 }
@@ -681,42 +679,34 @@ async function startFFmpeg(item, force = false) {
   const inputArgs = buildInputArgsForSource(source);
 
  const outputArgs = [
-       // Video & Audio - Copy mode
-    "-c:v", "copy",
-    "-c:a", "copy",
-    
-    // CRITICAL: AAC bitstream filter for ADTS->ASC conversion
-    "-bsf:a", "aac_adtstoasc",
-    
-    // Timing fixes - ESSENTIAL for Facebook
-    "-copyts",                          // Preserve timestamps
-    "-start_at_zero",                   // Start at zero timestamp
-    "-avoid_negative_ts", "make_zero",  // Fix negative timestamps
-    
-    // Stream mapping - Explicit is better
-    "-map", "0:v:0",
-    "-map", "0:a:0",
-    
-    // CRITICAL: Async audio fix (helps with A/V sync)
-    "-async", "1",
-    
-    // FLV output format
-    "-f", "flv",
-    "-flvflags", "no_duration_filesize+no_metadata",
-    
-    // Buffer management for live streaming
-    "-max_interleave_delta", "0",       // Handle sync errors gracefully
-    "-max_delay", "500000",             // 500ms max muxing delay
-    
-    // RTMP-specific optimizations
-    "-rtmp_buffer", "5000",             // 5 second RTMP buffer
-    "-rtmp_live", "live",               // Enable live mode
-    
-    // Logging
-    "-loglevel", "warning",
-    
-    // Facebook RTMP URL
-    cache.stream_url 
+  "-c:v", "copy",
+  "-c:a", "copy",
+  "-bsf:a", "aac_adtstoasc",
+  
+  // TIMING FIX - Don't use -copyts with live streams
+  "-vsync", "passthrough",            // CHANGED: passthrough mode
+  "-start_at_zero",
+  "-avoid_negative_ts", "make_zero",
+  
+  "-map", "0:v:0?",                   // CHANGED: Added ? for optional
+  "-map", "0:a:0?",                   // CHANGED: Added ? for optional
+  
+  // FLV output
+  "-f", "flv",
+  "-flvflags", "no_duration_filesize",
+  
+  // CRITICAL BUFFER FIX - Prevents shutdown every 5 min
+  "-max_muxing_queue_size", "1024",   // ADDED: Prevents queue overflow
+  "-muxdelay", "0",                   // ADDED: No muxing delay
+  "-fflags", "+flush_packets",        // ADDED: Flush immediately
+  
+  // RTMP settings
+  "-rtmp_buffer", "1000",             // CHANGED: 1s not 5s (less buffering)
+  "-rtmp_live", "live",
+  "-rtmp_flush_interval", "100",      // ADDED: Flush every 100ms
+  
+  "-loglevel", "warning",
+  cache.stream_url 
   ];
 
   const args = [...inputArgs, ...outputArgs];
