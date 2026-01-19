@@ -7,37 +7,41 @@ import { stdin as input, stdout as output } from "process";
 const config = {
   session: "auth",
   status: { terminal: true },
-  setPair: true
+  setPair: true,
+  pairingDelay: 5000 // ms
 };
 // ------------------------------------------------------
 
 const rl = readline.createInterface({ input, output });
 
 const clientstart = async () => {
-  // Auth state + WhatsApp version
+  // 1️⃣ Auth state + version
   const { state, saveCreds } = await useMultiFileAuthState(`./${config.session}`);
   const { version } = await fetchLatestBaileysVersion();
 
-  // Socket
-  const client = makeWASocket({
+  // 2️⃣ Create socket with your browser config
+  const sock = makeWASocket({
     logger: pino({ level: "silent" }),
     printQRInTerminal: false,
     auth: state,
     version,
-    browser: ["Ubuntu", "Chrome", "20.0.00"] // your requested browser
+    browser: ["Chrome (Linux)", "", ""]
   });
 
-  // Save creds automatically
-  client.ev.on("creds.update", saveCreds);
+  // 3️⃣ Save credentials automatically
+  sock.ev.on("creds.update", saveCreds);
 
-  // Pairing code
-  if (config.status.terminal && !client.authState.creds.registered) {
+  // 4️⃣ Wait a bit before requesting pairing code
+  if (config.status.terminal && !sock.authState.creds.registered) {
+    console.log(`⏳ Waiting ${config.pairingDelay}ms before requesting Pairing Code...`);
+    await new Promise(res => setTimeout(res, config.pairingDelay));
+
     const phoneNumber = await rl.question(
       "📲 Please enter your WhatsApp number (e.g. 2126xxxxxxx):\n> "
     );
 
     try {
-      const code = await client.requestPairingCode(phoneNumber, config.setPair);
+      const code = await sock.requestPairingCode(phoneNumber, config.setPair);
       console.log(`🔑 Your Pairing Code: ${code}`);
       console.log("➡️ Enter this code on WhatsApp → Linked Devices → Pair New Device");
     } catch (err) {
@@ -47,25 +51,26 @@ const clientstart = async () => {
     rl.close();
   }
 
-  // Auto-reply
-  client.ev.on("messages.upsert", async ({ messages }) => {
+  // 5️⃣ Auto-reply
+  sock.ev.on("messages.upsert", async ({ messages }) => {
     const msg = messages[0];
     if (!msg?.message || msg.key.fromMe) return;
 
     try {
-      await client.sendMessage(msg.key.remoteJid, { text: "مشغل" });
+      await sock.sendMessage(msg.key.remoteJid, { text: "مشغل" });
       console.log(`✅ Replied to ${msg.key.remoteJid}`);
     } catch (err) {
       console.error("❌ Failed to send message:", err.message);
     }
   });
 
-  // Connection updates
-  client.ev.on("connection.update", ({ connection, lastDisconnect }) => {
+  // 6️⃣ Connection updates
+  sock.ev.on("connection.update", ({ connection, lastDisconnect }) => {
     console.log("🔄 connection.update:", connection);
+
     if (connection === "close") {
       console.log("❌ Connection closed:", lastDisconnect?.error?.output?.statusCode);
-      setTimeout(clientstart, 15000); // reconnect
+      setTimeout(clientstart, 15000); // reconnect after 15s
     }
   });
 };
