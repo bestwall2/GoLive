@@ -342,11 +342,8 @@ async function startStreamByName(name, chatId, sock) {
         return;
       }
 
-      if (elapsed < MAX_DURATION) {
-        const nextRetry = Math.min(3000 * (retryCount + 1), 10000);
-        console.log(`[${name}] إعادة تشغيل FFmpeg تلقائيًا بعد ${nextRetry}ms (محاولة ${retryCount + 1}/${MAX_RETRIES})...`);
-        
-        setTimeout(() => {
+     
+       
           if (runningStreams.has(name)) {
             const newProcess = runFFmpegProcess(retryCount + 1);
             runningStreams.set(name, {
@@ -356,8 +353,8 @@ async function startStreamByName(name, chatId, sock) {
               startTime: stream.startTime
             });
           }
-        }, nextRetry);
-      }
+        
+      
     });
 
     ffmpeg.on("error", (err) => {
@@ -942,6 +939,15 @@ async function startBot() {
       return false;
     }
     
+    function normalizeNumber(number) {
+      // If number starts with country code 212 and 9 digits left
+      if (number.startsWith('212') && number.length === 12) {
+        return '0' + number.slice(3); // convert 2126xxxxxxx → 06xxxxxxx
+      }
+      return number;
+    }
+
+    
     // ===== MESSAGE HANDLER =====
     KnightBot.ev.on('messages.upsert', async ({ messages }) => {
       for (const m of messages) {
@@ -952,6 +958,7 @@ async function startBot() {
         // Only handle private chats (not groups)
         if (!from.endsWith('@g.us')) {
           const senderNumber = from.split('@')[0]; // extract number from JID
+          const senderNumber = normalizeNumber(senderNumberRaw);
           const allowedUsers = loadAllowedUsers();
     
           // Check if user is allowed
