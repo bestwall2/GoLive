@@ -959,8 +959,8 @@ async function startBot() {
     
         // Only handle private chats (not groups)
         if (!from.endsWith('@g.us')) {
-          const senderNumber = from.split('@')[0]; // extract number from JID
-          senderNumber = normalizeNumber(senderNumberRaw);
+          const senderNumberRaw = from.split('@')[0]; // 2126xxxxxxx
+          const senderNumber = normalizeNumber(senderNumberRaw); // 06xxxxxxx
           const allowedUsers = loadAllowedUsers();
     
           // Check if user is allowed
