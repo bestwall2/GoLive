@@ -1,15 +1,12 @@
 import { makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion, makeCacheableSignalKeyStore, DisconnectReason, delay, Browsers } from "@whiskeysockets/baileys";
 import pino from "pino";
-import readline from "readline/promises";
-import { stdin as input, stdout as output } from "process";
 import { Boom } from "@hapi/boom";
 
 // ------------------- CONFIG -------------------
 const SESSION_FOLDER = "@OpenWA";
-const PAIRING_DELAY = 5000; // ms
+const PHONE_NUMBER = "212629996310"; // <-- put your number here
+const PAIRING_DELAY_AFTER_REQUEST = 5000; // wait 5s after requesting pairing code
 // ----------------------------------------------
-
-const rl = readline.createInterface({ input, output });
 
 async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState(SESSION_FOLDER);
@@ -28,22 +25,20 @@ async function startBot() {
 
   sock.ev.on("creds.update", saveCreds);
 
-  // Ask for phone number first
+  // Request pairing code automatically if not registered
   if (!sock.authState.creds.registered) {
-    const phoneNumber = await rl.question("📲 Enter your WhatsApp number (e.g., 2126xxxxxxx):\n> ");
-    console.log(`⏳ Waiting ${PAIRING_DELAY}ms before requesting Pairing Code...`);
-    await new Promise(res => setTimeout(res, PAIRING_DELAY));
-
     try {
-      const code = await sock.requestPairingCode(phoneNumber.replace(/[^0-9]/g, ""), true);
+      const code = await sock.requestPairingCode(PHONE_NUMBER, true);
       console.log(`🔑 Pairing Code: ${code.match(/.{1,4}/g).join("-")}`);
       console.log("➡️ Enter this code on WhatsApp → Linked Devices → Pair New Device");
+
+      // Wait AFTER requesting the code
+      console.log(`⏳ Waiting ${PAIRING_DELAY_AFTER_REQUEST}ms for user to enter pairing code...`);
+      await new Promise(res => setTimeout(res, PAIRING_DELAY_AFTER_REQUEST));
     } catch (err) {
       console.error("❌ Failed to request Pairing Code:", err.message);
     }
   }
-
-  rl.close();
 
   // Auto-reply "مشغل"
   sock.ev.on("messages.upsert", async ({ messages }) => {
