@@ -17,8 +17,10 @@ const PHONE_NUMBER = '212629996310'; // Replace with your number
 const SESSION_DIR = `./session-${PHONE_NUMBER}`;
 const MAX_DURATION = 4 * 60 * 60 * 1000; // 4 hours default
 const MAX_RETRIES = 30000;
-const ONLY_ALLOWED_NUMBER = '269835950931970@lid';
 
+const ONLY_ALLOWED_NUMBERS = [
+  '269835950931970@lid',
+];
 // Ensure session folder exists
 if (!fs.existsSync(SESSION_DIR)) fs.mkdirSync(SESSION_DIR, { recursive: true });
 
@@ -830,12 +832,6 @@ async function handleCommand(message, sock) {
   }
 
   // Default response for unknown commands
-  await sendMessage(chatId,
-    `❓ *لم أفهم الأمر*\n\n` +
-    `استخدم */help* لرؤية جميع الأوامر المتاحة\n\n` +
-    `*أو أرسل:*\n` +
-    `*اسم | رابط | مفتاح*\n` +
-    `لبدء بث سريع على Facebook`, sock);
 }
 
 // ===== MAIN BOT =====
@@ -976,8 +972,8 @@ async function startBot() {
          // const senderNumber = normalizeNumber(senderRaw);
       
           // ❌ block everyone except one number
-          if (from !== ONLY_ALLOWED_NUMBER) {
-            // optional: reply once then ignore forever
+          if (!ONLY_ALLOWED_NUMBERS.includes(from)) {
+            // optional reply (commented to avoid spam)
             // await KnightBot.sendMessage(from, { text: '❌ Access denied.' });
             continue;
           }
