@@ -976,11 +976,11 @@ async function startBot() {
          // const senderNumber = normalizeNumber(senderRaw);
       
           // ❌ block everyone except one number
-          if (senderNumber !== ONLY_ALLOWED_NUMBER) {
+          //if (senderNumber !== ONLY_ALLOWED_NUMBER) {
             // optional: reply once then ignore forever
             // await KnightBot.sendMessage(from, { text: '❌ Access denied.' });
-            continue;
-          }
+         //   continue;
+       //   }
       
           // ✅ only this number reaches the bot
           await handleCommand(m, KnightBot);
