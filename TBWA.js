@@ -1,80 +1,80 @@
-import { makeWASocket, useMultiFileAuthState, DisconnectReason } from 'baileys';
-import { Boom } from '@hapi/boom';
-import QRCode from 'qrcode';
+import makeWASocket, {
+  useMultiFileAuthState,
+  fetchLatestBaileysVersion,
+  makeInMemoryStore
+} from "@whiskeysockets/baileys";
+import pino from "pino";
+import readline from "readline/promises";
+import { stdin as input, stdout as output } from "process";
 
-async function connectToWhatsApp() {
-    // 1. Setup Authentication State (FOR DEMO ONLY)
-    // ⚠️ WARNING: As per docs, DO NOT use `useMultiFileAuthState` in production.
-    const { state, saveCreds } = await useMultiFileAuthState('./auth_info_pairing');
+// ----------------------- CONFIG -----------------------
+const config = {
+  session: "auth",
+  status: {
+    terminal: true
+  },
+  setPair: true
+};
+// ------------------------------------------------------
 
-    // 2. Create the WhatsApp Socket
-    const sock = makeWASocket({
-        auth: state,
-        printQRInTerminal: false, // We'll handle QR/connection manually
-    });
+const rl = readline.createInterface({ input, output });
 
-    // 3. Save credentials whenever they update
-    sock.ev.on('creds.update', saveCreds);
+const clientstart = async () => {
+  const store = makeInMemoryStore({
+    logger: pino().child({ level: "silent" })
+  });
 
-    // 4. 👇 YOUR PHONE NUMBER HERE (in E.164 format, no '+')
-    const phoneNumber = '212629996310'; // Format: 12345678901
+  const { state, saveCreds } = await useMultiFileAuthState(`./${config.session}`);
+  const { version } = await fetchLatestBaileysVersion();
 
-    // 5. Handle Connection & Pairing Code Request
-    sock.ev.on('connection.update', async (update) => {
-        const { connection, lastDisconnect, qr } = update;
+  const client = makeWASocket({
+    logger: pino({ level: "silent" }),
+    printQRInTerminal: false,
+    auth: state,
+    version,
+    browser: ["Ubuntu", "Chrome", "20.0.00"] // 🔹 your requested browser
+  });
 
-        // --- Handle Disconnection & Reconnection ---
-        if (connection === 'close') {
-            const statusCode = (lastDisconnect?.error)?.output?.statusCode;
-            const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+  client.ev.on("creds.update", saveCreds);
+  store.bind(client.ev);
 
-            console.log('Connection closed. Status:', statusCode, '. Reconnecting:', shouldReconnect);
+  if (config.status.terminal && !client.authState.creds.registered) {
+    const phoneNumber = await rl.question(
+      "📲 Please enter your WhatsApp number (e.g. 2126xxxxxxx):\n> "
+    );
 
-            if (shouldReconnect) {
-                // Reconnect logic can go here
-                // connectToWhatsApp();
-            }
-        }
+    try {
+      const code = await client.requestPairingCode(phoneNumber, config.setPair);
+      console.log(`🔑 Your Pairing Code: ${code}`);
+      console.log("➡️ Enter this code on WhatsApp → Linked Devices → Pair New Device");
+    } catch (err) {
+      console.error("❌ Failed to request Pairing Code:", err.message);
+    }
 
-        // --- Request Pairing Code when connecting or QR is received ---
-        // The docs say: wait for "connecting" state OR when a `qr` event exists
-        if (connection === 'connecting' || qr) {
-            console.log('Requesting pairing code for', phoneNumber, '...');
+    rl.close();
+  }
 
-            try {
-                // This is the key function from the documentation
-                const pairingCode = await sock.requestPairingCode(phoneNumber);
-                console.log('✅ Pairing Code:', pairingCode);
-                console.log('-> Enter this code in your phone\'s WhatsApp Linked Devices section.');
-            } catch (err) {
-                console.error('Failed to get pairing code:', err);
-            }
-        }
+  client.ev.on("messages.upsert", async ({ messages }) => {
+    const msg = messages[0];
+    if (!msg?.message || msg.key.fromMe) return;
 
-        // --- Confirm Successful Connection ---
-        if (connection === 'open') {
-            console.log('✅ Bot is online and ready!');
-        }
-    });
+    try {
+      await client.sendMessage(msg.key.remoteJid, { text: "مشغل" });
+      console.log(`✅ Replied to ${msg.key.remoteJid}`);
+    } catch (err) {
+      console.error("❌ Failed to send message:", err.message);
+    }
+  });
 
-    // 6. Listen for Messages and Respond with "hi"
-    sock.ev.on('messages.upsert', async (m) => {
-        const msg = m.messages[0];
-        // Ignore if the message is from yourself or has no content
-        if (!msg.message || msg.key.fromMe) {
-            return;
-        }
+  client.ev.on("connection.update", (update) => {
+    const { connection, lastDisconnect } = update;
+    console.log("🔄 connection.update:", connection);
 
-        const sender = msg.key.remoteJid; // The chat ID
-        const text = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
+    if (connection === "close") {
+      console.log("❌ Connection closed:", lastDisconnect?.error?.output?.statusCode);
+      setTimeout(clientstart, 15000); // reconnect after 15s
+    }
+  });
+};
 
-        console.log(`📩 Message from ${sender}: ${text}`);
-
-        // Auto-reply with "hi"
-        await sock.sendMessage(sender, { text: 'hi' });
-        console.log(`✅ Replied "hi" to ${sender}`);
-    });
-}
-
-// Start the bot
-connectToWhatsApp();
+clientstart();
