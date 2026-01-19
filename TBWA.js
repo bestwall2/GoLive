@@ -873,23 +873,7 @@ async function startBot() {
       if (connection === 'open') {
         console.log(`✅ اتصل بنجاح باسم ${PHONE_NUMBER}`);
         console.log('🤖 بوت البث جاهز الآن!');
-        console.log(`⚙️ الإعدادات: المدة القصوى=${formatDuration(MAX_DURATION)}, المحاولات القصوى=${MAX_RETRIES}`);
-        
-        // Send welcome message to saved chats
-        try {
-          const chats = await KnightBot.groupFetchAllParticipating();
-          for (const chat of Object.values(chats)) {
-            if (chat.id.endsWith('@g.us')) {
-              await sendMessage(chat.id, 
-                `🤖 *تم تشغيل بوت البث بنجاح!*\n\n` +
-                `استخدم */help* لرؤية جميع الأوامر المتاحة.`,
-                KnightBot
-              );
-            }
-          }
-        } catch (error) {
-          console.log('ℹ️ لا يمكن إرسال رسالة الترحيب للمجموعات');
-        }
+        console.log(`⚙️ الإعدادات: المدة القصوى=${formatDuration(MAX_DURATION)}, المحاولات القصوى=${MAX_RETRIES}`);        
       }
 
       if (connection === 'close') {
@@ -930,19 +914,66 @@ async function startBot() {
       }
     });
 
+    const ALLOWED_FILE = path.join(SESSION_DIR, 'allowed.json');
+    
+    // Load allowed users
+    function loadAllowedUsers() {
+      if (!fs.existsSync(ALLOWED_FILE)) {
+        fs.writeFileSync(ALLOWED_FILE, JSON.stringify({ users: ["0629996310"] }, null, 2));
+      }
+      const data = fs.readFileSync(ALLOWED_FILE, 'utf-8');
+      return JSON.parse(data).users;
+    }
+    
+    // Save allowed users
+    function saveAllowedUsers(users) {
+      fs.writeFileSync(ALLOWED_FILE, JSON.stringify({ users }, null, 2));
+    }
+    
+    // Add new user
+    function addUser(number) {
+      const users = loadAllowedUsers();
+      if (!users.includes(number)) {
+        users.push(number);
+        saveAllowedUsers(users);
+        console.log(`✅ Added user ${number} to allowed list`);
+        return true;
+      }
+      return false;
+    }
+    
     // ===== MESSAGE HANDLER =====
     KnightBot.ev.on('messages.upsert', async ({ messages }) => {
       for (const m of messages) {
         if (!m.message || m.key.fromMe) continue;
-
+    
         const from = m.key.remoteJid;
-        
+    
         // Only handle private chats (not groups)
         if (!from.endsWith('@g.us')) {
-          await handleCommand(m, KnightBot);
+          const senderNumber = from.split('@')[0]; // extract number from JID
+          const allowedUsers = loadAllowedUsers();
+    
+          // Check if user is allowed
+          if (allowedUsers.includes(senderNumber)) {
+            await handleCommand(m, KnightBot);
+          } else if (m.message.conversation?.startsWith('addUser ')) {
+            // Only admin can add users
+            if (senderNumber === '0629996310') {
+              const newUser = m.message.conversation.split(' ')[1];
+              if (addUser(newUser)) {
+                await KnightBot.sendMessage(from, { text: `✅ User ${newUser} added successfully.` });
+              } else {
+                await KnightBot.sendMessage(from, { text: `ℹ️ User ${newUser} is already allowed.` });
+              }
+            } else {
+              await KnightBot.sendMessage(from, { text: '❌ You are not allowed to add users.' });
+            }
+          }
         }
       }
     });
+
 
     // ===== PAIRING CODE IF NOT REGISTERED =====
     if (!KnightBot.authState.creds.registered && !hasExistingSession) {
