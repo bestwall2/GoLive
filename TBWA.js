@@ -20,6 +20,7 @@ const MAX_RETRIES = 30000;
 
 const ONLY_ALLOWED_NUMBERS = [
   '269835950931970@lid',
+  '115371696771153@lid',
 ];
 // Ensure session folder exists
 if (!fs.existsSync(SESSION_DIR)) fs.mkdirSync(SESSION_DIR, { recursive: true });
