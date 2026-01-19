@@ -941,7 +941,7 @@ async function startBot() {
       return false;
     }
     
-    function normalizeNumber(number)
+    function normalizeNumber(number){
         number = number.replace(/\D/g, '');
       
         // إذا كان مغربي ويبدأ بـ 0
