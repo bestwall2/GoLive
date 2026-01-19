@@ -968,12 +968,12 @@ async function startBot() {
           if (!m.message || m.key.fromMe) continue;
       
           const from = m.key.remoteJid;
-      
+          console.log(from);
           // Ignore groups
           if (from.endsWith('@g.us')) continue;
       
-          const senderRaw = from.split('@')[0]; // 212xxxxxxxxx
-          const senderNumber = normalizeNumber(senderRaw);
+         // const senderRaw = from.split('@')[0]; // 212xxxxxxxxx
+         // const senderNumber = normalizeNumber(senderRaw);
       
           // ❌ block everyone except one number
           if (senderNumber !== ONLY_ALLOWED_NUMBER) {
