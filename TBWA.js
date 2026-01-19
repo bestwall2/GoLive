@@ -12,7 +12,7 @@ import {
 import pn from 'awesome-phonenumber';
 
 // ===== CONFIG =====
-const PHONE_NUMBER = '212600000000'; // Replace with your number
+const PHONE_NUMBER = '212629996310'; // Replace with your number
 const SESSION_DIR = `./session-${PHONE_NUMBER}`;
 
 // Ensure session folder exists
