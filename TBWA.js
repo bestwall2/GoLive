@@ -8,63 +8,47 @@ import Pino from "pino";
 let pairingRequested = false;
 
 async function startBot() {
-  console.log("🚀 Starting WhatsApp bot...");
-
   const { state, saveCreds } = await useMultiFileAuthState("auth");
   const { version } = await fetchLatestBaileysVersion();
 
   const sock = makeWASocket({
     version,
     auth: state,
-    logger: Pino({ level: "debug" }), // مهم للتشخيص
+    logger: Pino({ level: "debug" }),
     printQRInTerminal: false,
-
-    // 🔴 إعدادات إجبار الاتصال (مهمة على VPS)
-    browser: ["Ubuntu VPS", "Chrome", "22.04"],
-    connectTimeoutMs: 60_000,
-    keepAliveIntervalMs: 15_000,
-    defaultQueryTimeoutMs: 60_000,
-    markOnlineOnConnect: false,
+    browser: ["Ubuntu VPS", "Chrome", "22.04"]
   });
 
   sock.ev.on("creds.update", saveCreds);
 
   sock.ev.on("connection.update", async (update) => {
     const { connection, lastDisconnect } = update;
+    console.log("🔄 connection.update:", connection);
 
-    console.log("📡 connection.update event:", update);
-
-    // ✅ اطلب Pairing Code فقط بعد OPEN
     if (
       connection === "open" &&
       !sock.authState.creds.registered &&
       !pairingRequested
     ) {
       pairingRequested = true;
-      const phone = "212629996310";
-      console.log("📲 Requesting pairing code...");
-      const code = await sock.requestPairingCode(phone);
-      console.log("🔑 PAIRING CODE:", code);
-      console.log("➡️ أدخل الكود فوراً في واتساب");
+      const phoneNumber = "212629996310"; // your number without +
+      const code = await sock.requestPairingCode(phoneNumber);
+      console.log("🔑 Pairing Code:", code);
+      console.log("➡️ Enter it on your phone under WhatsApp → Linked Devices → Pair New Device");
     }
 
     if (connection === "close") {
       const reason = lastDisconnect?.error?.output?.statusCode;
       console.log("❌ Connection closed. Reason:", reason);
-
       if (reason !== DisconnectReason.loggedOut) {
-        console.log("⏳ Reconnecting in 15s...");
-        setTimeout(startBot, 15_000);
+        setTimeout(startBot, 15000);
       }
     }
   });
 
-  // 📩 استقبال الرسائل
   sock.ev.on("messages.upsert", async ({ messages }) => {
     const msg = messages[0];
     if (!msg?.message || msg.key.fromMe) return;
-
-    console.log("📩 Message received");
     await sock.sendMessage(msg.key.remoteJid, { text: "مشغل" });
   });
 }
