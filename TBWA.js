@@ -1,47 +1,80 @@
-import makeWASocket, {
-  useMultiFileAuthState,
-  fetchLatestBaileysVersion,
-  Browsers
-} from "@whiskeysockets/baileys";
+const { makeWASocket, useMultiFileAuthState, DisconnectReason } = require('baileys');
+const { Boom } = require('@hapi/boom');
+const QRCode = require('qrcode'); // Optional: for QR fallback
 
-let pairingRequested = false;
+async function connectToWhatsApp() {
+    // 1. Setup Authentication State (FOR DEMO ONLY)
+    // ⚠️ WARNING: As per docs, DO NOT use `useMultiFileAuthState` in production.
+    const { state, saveCreds } = await useMultiFileAuthState('./auth_info_pairing');
 
-async function startBot() {
-  const { state, saveCreds } = await useMultiFileAuthState("auth");
-  const { version } = await fetchLatestBaileysVersion();
+    // 2. Create the WhatsApp Socket
+    const sock = makeWASocket({
+        auth: state,
+        printQRInTerminal: false, // We'll handle QR/connection manually
+    });
 
-  const sock = makeWASocket({
-    version,
-    auth: state,
-    printQRInTerminal: false,
-    browser: Browsers.macOS("Google Chrome") // ✅ required for Pairing Code
-  });
+    // 3. Save credentials whenever they update
+    sock.ev.on('creds.update', saveCreds);
 
-  sock.ev.on("creds.update", saveCreds);
+    // 4. 👇 YOUR PHONE NUMBER HERE (in E.164 format, no '+')
+    const phoneNumber = '212629996310'; // Format: 12345678901
 
-  sock.ev.on("connection.update", async (update) => {
-    const { connection, lastDisconnect } = update;
-    console.log("🔄 connection.update:", connection);
+    // 5. Handle Connection & Pairing Code Request
+    sock.ev.on('connection.update', async (update) => {
+        const { connection, lastDisconnect, qr } = update;
 
-    if (connection === "open" && !sock.authState.creds.registered && !pairingRequested) {
-      pairingRequested = true;
-      const phoneNumber = "212629996310"; // without '+'
-      const code = await sock.requestPairingCode(phoneNumber);
-      console.log("🔑 Pairing Code:", code);
-      console.log("➡️ Enter it in WhatsApp → Linked Devices → Pair New Device");
-    }
+        // --- Handle Disconnection & Reconnection ---
+        if (connection === 'close') {
+            const statusCode = (lastDisconnect?.error)?.output?.statusCode;
+            const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
 
-    if (connection === "close") {
-      console.log("❌ Connection closed:", lastDisconnect?.error?.output?.statusCode);
-      setTimeout(startBot, 15000);
-    }
-  });
+            console.log('Connection closed. Status:', statusCode, '. Reconnecting:', shouldReconnect);
 
-  sock.ev.on("messages.upsert", async ({ messages }) => {
-    const msg = messages[0];
-    if (!msg?.message || msg.key.fromMe) return;
-    await sock.sendMessage(msg.key.remoteJid, { text: "مشغل" });
-  });
+            if (shouldReconnect) {
+                // Reconnect logic can go here
+                // connectToWhatsApp();
+            }
+        }
+
+        // --- Request Pairing Code when connecting or QR is received ---
+        // The docs say: wait for "connecting" state OR when a `qr` event exists
+        if (connection === 'connecting' || qr) {
+            console.log('Requesting pairing code for', phoneNumber, '...');
+
+            try {
+                // This is the key function from the documentation
+                const pairingCode = await sock.requestPairingCode(phoneNumber);
+                console.log('✅ Pairing Code:', pairingCode);
+                console.log('-> Enter this code in your phone\'s WhatsApp Linked Devices section.');
+            } catch (err) {
+                console.error('Failed to get pairing code:', err);
+            }
+        }
+
+        // --- Confirm Successful Connection ---
+        if (connection === 'open') {
+            console.log('✅ Bot is online and ready!');
+        }
+    });
+
+    // 6. Listen for Messages and Respond with "hi"
+    sock.ev.on('messages.upsert', async (m) => {
+        const msg = m.messages[0];
+        // Ignore if the message is from yourself or has no content
+        if (!msg.message || msg.key.fromMe) {
+            return;
+        }
+
+        const sender = msg.key.remoteJid; // The chat ID
+        const text = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
+
+        console.log(`📩 Message from ${sender}: ${text}`);
+
+        // Auto-reply with "hi"
+        await sock.sendMessage(sender, { text: 'hi' });
+        console.log(`✅ Replied "hi" to ${sender}`);
+    });
 }
 
-startBot();
+// Start the bot
+connectToWhatsApp();
