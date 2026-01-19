@@ -436,33 +436,53 @@ function buildInputArgsForSource(source) {
   if (isHLS) {
     // Optimized args for HLS / live .ts streams
     return [
+      "-re",
       "-user_agent", getUserAgent("default"),
+      
+      // reconnect قوي
       "-reconnect", "1",
-      "-reconnect_at_eof", "1",
       "-reconnect_streamed", "1",
-      "-reconnect_on_network_error", "1",
-      "-reconnect_delay_max", "10",
-      "-multiple_requests", "1",
-      "-rw_timeout", "0",
-      "-timeout", "0",
-      "-fflags", "+genpts+igndts",
-      "-max_delay", "10000000", // 10 seconds buffer
-      "-thread_queue_size", "16384",
-      "-analyzeduration", "10M",
-      "-probesize", "10M",
-      "-itsoffset", "50",
+      "-reconnect_at_eof", "1",
+      "-reconnect_delay_max", "2",
+      "-timeout", "5000000",
+      "-rw_timeout", "5000000",
+      
+      // يتجاهل كل الأخطاء
+      "-fflags", "+genpts+igndts+discardcorrupt+nobuffer",
+      "-err_detect", "ignore_err",               // يتجاهل أخطاء decode
+      "-use_wallclock_as_timestamps", "1",
+      "-correct_ts_overflow", "1",
+      
+      // يحاول قراءة المصدر حتى لو مكسور
+      "-analyzeduration", "5000000",
+      "-probesize", "10000000",
+      
       "-i", s
     ];
   } else {
     // HTTP progressive / .ts segments
     return [
-      "-re",                              // READ AT NATIVE FRAMERATE - CRITICAL!
+      "-re",
       "-user_agent", getUserAgent("default"),
+      
+      // reconnect قوي
       "-reconnect", "1",
       "-reconnect_streamed", "1",
+      "-reconnect_at_eof", "1",
       "-reconnect_delay_max", "2",
       "-timeout", "5000000",
-      "-fflags", "+genpts+discardcorrupt+nobuffer",
+      "-rw_timeout", "5000000",
+      
+      // يتجاهل كل الأخطاء
+      "-fflags", "+genpts+igndts+discardcorrupt+nobuffer",
+      "-err_detect", "ignore_err",               // يتجاهل أخطاء decode
+      "-use_wallclock_as_timestamps", "1",
+      "-correct_ts_overflow", "1",
+      
+      // يحاول قراءة المصدر حتى لو مكسور
+      "-analyzeduration", "5000000",
+      "-probesize", "10000000",
+      
       "-i", s
     ];
   }
@@ -663,6 +683,20 @@ async function startFFmpeg(item, force = false) {
     "-c:v", "copy",
     "-c:a", "copy",
     "-bsf:a", "aac_adtstoasc",
+    
+    // إصلاح timestamps قوي
+    "-fps_mode", "passthrough",
+    "-start_at_zero",
+    "-avoid_negative_ts", "make_zero",
+    "-max_interleave_delta", "0",
+    
+    // buffer كبير للمشاكل
+    "-max_muxing_queue_size", "9999",
+    
+    // audio sync تلقائي
+    "-async", "1",
+    "-af", "aresample=async=1",          // يصلح audio دائماً
+    
     "-f", "flv",
     cache.stream_url 
   ];
