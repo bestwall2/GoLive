@@ -1,6 +1,6 @@
-const { makeWASocket, useMultiFileAuthState, DisconnectReason } = require('baileys');
-const { Boom } = require('@hapi/boom');
-const QRCode = require('qrcode'); // Optional: for QR fallback
+import { makeWASocket, useMultiFileAuthState, DisconnectReason } from 'baileys';
+import { Boom } from '@hapi/boom';
+import QRCode from 'qrcode';
 
 async function connectToWhatsApp() {
     // 1. Setup Authentication State (FOR DEMO ONLY)
