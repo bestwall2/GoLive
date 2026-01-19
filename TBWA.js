@@ -893,13 +893,13 @@ async function startBot() {
         
         if (code === 401) {
           console.log('❌ تم تسجيل الخروج (401). جاري مسح الجلسة...');
-          clearSession();
+         // clearSession();
           console.log('🔄 إعادة تشغيل البوت...');
           await delay(5000);
           startBot();
         } else if (code === 403) {
           console.log('🚫 تم حظر الجهاز (403). جاري مسح الجلسة...');
-          clearSession();
+          //clearSession();
           console.log('🔄 إعادة تشغيل البوت...');
           await delay(5000);
           startBot();
