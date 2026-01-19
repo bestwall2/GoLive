@@ -22,10 +22,7 @@ const MAX_RETRIES = 30000;
 if (!fs.existsSync(SESSION_DIR)) fs.mkdirSync(SESSION_DIR, { recursive: true });
 
 // Remove old session if needed
-function removeSession(folder) {
-  if (!fs.existsSync(folder)) return;
-  fs.rmSync(folder, { recursive: true, force: true });
-}
+
 
 // ===== STREAM MANAGEMENT =====
 const registeredStreams = new Map();
