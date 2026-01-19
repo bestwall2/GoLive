@@ -1,7 +1,7 @@
 "use strict";
 
-const { Boom } = require("@hapi/boom");
-const {
+import { Boom } from "@hapi/boom";
+import {
   makeWASocket,
   useMultiFileAuthState,
   fetchLatestBaileysVersion,
@@ -10,10 +10,10 @@ const {
   jidDecode,
   delay,
   proto
-} = require("@whiskeysockets/baileys");
+} from "@whiskeysockets/baileys";
 import { Browsers } from "@whiskeysockets/baileys";
 
-const pino = require("pino");
+import pino from "pino";
 
 // ------------------- CONFIG -------------------
 const PHONE_NUMBER = "212629996310"; // put your number here
