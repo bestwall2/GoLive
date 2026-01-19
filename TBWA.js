@@ -60,6 +60,22 @@ function clearSession() {
   }
 }
 
+const ALLOWED_FILE = path.join(SESSION_DIR, 'allowed.json');
+    
+    // Load allowed users
+function loadAllowedUsers() {
+  if (!fs.existsSync(ALLOWED_FILE)) {
+      fs.writeFileSync(ALLOWED_FILE, JSON.stringify({ users: ["0629996310","0681718430"] }, null, 2));
+  }
+const data = fs.readFileSync(ALLOWED_FILE, 'utf-8');
+  return JSON.parse(data).users;
+}
+    
+ // Save allowed users
+function saveAllowedUsers(users) {
+  fs.writeFileSync(ALLOWED_FILE, JSON.stringify({ users }, null, 2));
+}
+
 // ===== STREAM MANAGEMENT =====
 const registeredStreams = new Map();
 const runningStreams = new Map();
@@ -911,21 +927,7 @@ async function startBot() {
       }
     });
 
-    const ALLOWED_FILE = path.join(SESSION_DIR, 'allowed.json');
     
-    // Load allowed users
-    function loadAllowedUsers() {
-      if (!fs.existsSync(ALLOWED_FILE)) {
-        fs.writeFileSync(ALLOWED_FILE, JSON.stringify({ users: ["0629996310","0681718430"] }, null, 2));
-      }
-      const data = fs.readFileSync(ALLOWED_FILE, 'utf-8');
-      return JSON.parse(data).users;
-    }
-    
-    // Save allowed users
-    function saveAllowedUsers(users) {
-      fs.writeFileSync(ALLOWED_FILE, JSON.stringify({ users }, null, 2));
-    }
     
     // Add new user
     function addUser(number) {
