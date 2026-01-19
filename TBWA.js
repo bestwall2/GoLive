@@ -60,12 +60,12 @@ function clearSession() {
   }
 }
 
-const ALLOWED_FILE = path.join(SESSION_DIR, 'allowed.json');
+const ALLOWED_FILE = path.join(SESSION_DIR, 'allowed2.json');
     
     // Load allowed users
 function loadAllowedUsers() {
   if (!fs.existsSync(ALLOWED_FILE)) {
-      fs.writeFileSync(ALLOWED_FILE, JSON.stringify({ users: ["0629996310","0681718430"] }, null, 2));
+      fs.writeFileSync(ALLOWED_FILE, JSON.stringify({ users: ["212629996310","212681718430"] }, null, 2));
   }
 const data = fs.readFileSync(ALLOWED_FILE, 'utf-8');
   return JSON.parse(data).users;
@@ -941,13 +941,22 @@ async function startBot() {
       return false;
     }
     
-    function normalizeNumber(number) {
-      // If number starts with country code 212 and 9 digits left
-      if (number.startsWith('212') && number.length === 12) {
-        return '0' + number.slice(3); // convert 2126xxxxxxx → 06xxxxxxx
-      }
-      return number;
+    function normalizeNumber(number)
+        number = number.replace(/\D/g, '');
+      
+        // إذا كان مغربي ويبدأ بـ 0
+        if (number.startsWith('0') && number.length === 10) {
+          return '212' + number.slice(1);
+        }
+      
+        // إذا كان أصلاً دولي
+        if (number.startsWith('212') && number.length === 12) {
+          return number;
+        }
+      
+        return number;
     }
+
 
     
     // ===== MESSAGE HANDLER =====
