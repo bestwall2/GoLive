@@ -916,7 +916,7 @@ async function startBot() {
     // Load allowed users
     function loadAllowedUsers() {
       if (!fs.existsSync(ALLOWED_FILE)) {
-        fs.writeFileSync(ALLOWED_FILE, JSON.stringify({ users: ["0629996310"] }, null, 2));
+        fs.writeFileSync(ALLOWED_FILE, JSON.stringify({ users: ["0629996310","0681718430"] }, null, 2));
       }
       const data = fs.readFileSync(ALLOWED_FILE, 'utf-8');
       return JSON.parse(data).users;
