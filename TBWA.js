@@ -1,26 +1,15 @@
-"use strict";
-
-import { Boom } from "@hapi/boom";
-import {
-  makeWASocket,
-  useMultiFileAuthState,
-  fetchLatestBaileysVersion,
-  makeCacheableSignalKeyStore,
-  DisconnectReason,
-  jidDecode,
-  delay,
-  proto
-} from "@whiskeysockets/baileys";
-import { Browsers } from "@whiskeysockets/baileys";
-
+import { makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion, makeCacheableSignalKeyStore, DisconnectReason, delay, Browsers } from "@whiskeysockets/baileys";
 import pino from "pino";
+import readline from "readline/promises";
+import { stdin as input, stdout as output } from "process";
+import { Boom } from "@hapi/boom";
 
 // ------------------- CONFIG -------------------
-const PHONE_NUMBER = "212629996310"; // put your number here
 const SESSION_FOLDER = "@OpenWA";
-const PAIRING_DELAY = 5000; // 5 seconds before requesting pairing code
-const BROWSER = ["CHRO"];
+const PAIRING_DELAY = 5000; // ms
 // ----------------------------------------------
+
+const rl = readline.createInterface({ input, output });
 
 async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState(SESSION_FOLDER);
@@ -30,7 +19,7 @@ async function startBot() {
     version,
     logger: pino({ level: "silent" }),
     printQRInTerminal: false,
-    browser: Browsers.ubuntu('CHROME'),
+    browser: Browsers.ubuntu("Chrome"),
     auth: {
       creds: state.creds,
       keys: makeCacheableSignalKeyStore(state.keys, pino({ level: "silent" }))
@@ -39,19 +28,22 @@ async function startBot() {
 
   sock.ev.on("creds.update", saveCreds);
 
-  // Wait before requesting pairing code
+  // Ask for phone number first
   if (!sock.authState.creds.registered) {
+    const phoneNumber = await rl.question("📲 Enter your WhatsApp number (e.g., 2126xxxxxxx):\n> ");
     console.log(`⏳ Waiting ${PAIRING_DELAY}ms before requesting Pairing Code...`);
     await new Promise(res => setTimeout(res, PAIRING_DELAY));
 
     try {
-      const code = await sock.requestPairingCode(PHONE_NUMBER, true);
+      const code = await sock.requestPairingCode(phoneNumber.replace(/[^0-9]/g, ""), true);
       console.log(`🔑 Pairing Code: ${code.match(/.{1,4}/g).join("-")}`);
       console.log("➡️ Enter this code on WhatsApp → Linked Devices → Pair New Device");
     } catch (err) {
       console.error("❌ Failed to request Pairing Code:", err.message);
     }
   }
+
+  rl.close();
 
   // Auto-reply "مشغل"
   sock.ev.on("messages.upsert", async ({ messages }) => {
