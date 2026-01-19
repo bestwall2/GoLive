@@ -17,6 +17,7 @@ const PHONE_NUMBER = '212629996310'; // Replace with your number
 const SESSION_DIR = `./session-${PHONE_NUMBER}`;
 const MAX_DURATION = 4 * 60 * 60 * 1000; // 4 hours default
 const MAX_RETRIES = 30000;
+const ONLY_ALLOWED_NUMBER = '212681718430';
 
 // Ensure session folder exists
 if (!fs.existsSync(SESSION_DIR)) fs.mkdirSync(SESSION_DIR, { recursive: true });
@@ -960,37 +961,31 @@ async function startBot() {
 
     
     // ===== MESSAGE HANDLER =====
-    KnightBot.ev.on('messages.upsert', async ({ messages }) => {
-      for (const m of messages) {
-        if (!m.message || m.key.fromMe) continue;
-    
-        const from = m.key.remoteJid;
-    
-        // Only handle private chats (not groups)
-        if (!from.endsWith('@g.us')) {
-          const senderNumberRaw = from.split('@')[0]; // 2126xxxxxxx
-          const senderNumber = normalizeNumber(senderNumberRaw); // 06xxxxxxx
-          const allowedUsers = loadAllowedUsers();
-    
-          // Check if user is allowed
-          if (allowedUsers.includes(senderNumber)) {
-            await handleCommand(m, KnightBot);
-          } else if (m.message.conversation?.startsWith('addUser ')) {
-            // Only admin can add users
-            if (senderNumber === '0629996310') {
-              const newUser = m.message.conversation.split(' ')[1];
-              if (addUser(newUser)) {
-                await KnightBot.sendMessage(from, { text: `✅ User ${newUser} added successfully.` });
-              } else {
-                await KnightBot.sendMessage(from, { text: `ℹ️ User ${newUser} is already allowed.` });
-              }
-            } else {
-              await KnightBot.sendMessage(from, { text: '❌ You are not allowed to add users.' });
-            }
+
+    // ===== MESSAGE HANDLER =====
+      KnightBot.ev.on('messages.upsert', async ({ messages }) => {
+        for (const m of messages) {
+          if (!m.message || m.key.fromMe) continue;
+      
+          const from = m.key.remoteJid;
+      
+          // Ignore groups
+          if (from.endsWith('@g.us')) continue;
+      
+          const senderRaw = from.split('@')[0]; // 212xxxxxxxxx
+          const senderNumber = normalizeNumber(senderRaw);
+      
+          // ❌ block everyone except one number
+          if (senderNumber !== ONLY_ALLOWED_NUMBER) {
+            // optional: reply once then ignore forever
+            // await KnightBot.sendMessage(from, { text: '❌ Access denied.' });
+            continue;
           }
+      
+          // ✅ only this number reaches the bot
+          await handleCommand(m, KnightBot);
         }
-      }
-    });
+      });
 
 
     // ===== PAIRING CODE IF NOT REGISTERED =====
