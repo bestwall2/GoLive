@@ -463,11 +463,11 @@ function buildInputArgsForSource(source) {
     // HTTP progressive / .ts segments
     return [
       // Fallback image from URL + silent audio
-      "-loop", "1",
-      "-framerate", "25",
-      "-i", "https://i.ibb.co/21M7Zp04/5c2681bd-90e4-44f3-8dfc-0a0127612bba.jpg",  // ✅ URL مباشر
-      "-f", "lavfi",
-      "-i", "anullsrc=r=44100:cl=stereo",
+    //  "-loop", "1",
+    //  "-framerate", "25",
+    //  "-i", "https://i.ibb.co/21M7Zp04/5c2681bd-90e4-44f3-8dfc-0a0127612bba.jpg",  // ✅ URL مباشر
+    //  "-f", "lavfi",
+    //  "-i", "anullsrc=r=44100:cl=stereo",
       
       "-re",
       "-user_agent", getUserAgent("default"),
@@ -680,16 +680,11 @@ async function startFFmpeg(item, force = false) {
 
  const outputArgs = [
     // Map: use input 2 (main source) if available, else input 0+1 (fallback)
-    "-map", "2:v?",
-    "-map", "2:a?",
+    //"-map", "2:v?",
+   // "-map", "2:a?",
     "-c:v", "copy",
     "-c:a", "copy",
     "-bsf:a", "aac_adtstoasc",
-    "-max_muxing_queue_size", "9999",
-    "-flvflags", "no_duration_filesize+no_metadata",
-    "-rtmp_buffer", "5000",
-    "-rtmp_live", "live",
-    "-f", "flv",
     cache.stream_url 
   ];
 
