@@ -479,7 +479,7 @@ function buildInputArgsForSource(source) {
       "-err_detect", "ignore_err",      
       // Buffer في المدخل لامتصاص المشاكل 
       // ✅ INPUT BUFFERING (FFmpeg v4 safe)
-      "-recv_buffer_size", "8000000",
+      //"-recv_buffer_size", "8000000",
       "-probesize", "10000000",
       "-analyzeduration", "5000000",
 
@@ -689,7 +689,6 @@ async function startFFmpeg(item, force = false) {
     "-bsf:a", "aac_adtstoasc",
     // Buffer في المخرج لتنعيم البث
     "-max_muxing_queue_size", "4096",     // ✅ queue كبير
-    "-muxdelay", "2",                      // ✅ تأخير 2 ثانية للتنعيم ثانية
     "-flvflags", "no_duration_filesize+no_metadata",
     "-rtmp_buffer", "10000",
     "-rtmp_live", "live",
