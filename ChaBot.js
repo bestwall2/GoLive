@@ -22,7 +22,7 @@ const CONFIG = {
 
   // Connection orchestration
   // Increased to support running 12 servers at once
-  maxConcurrentConnects: 18, // number of simultaneous RTMPS handshake attempts allowed
+  maxConcurrentConnects: 12, // number of simultaneous RTMPS handshake attempts allowed
   connectStabilityWindow: 10_000, // ms: after process 'start', wait this to call it stable (release slot earlier if desired)
   connectTimeout: 20_000, // ms: if no 'start' event in this time after run(), consider startup failed
   startupBackoffBase: 30_000, // base backoff for startup failures
@@ -475,14 +475,12 @@ function buildInputArgsForSource(source) {
       "-reconnect_streamed", "1",
       "-reconnect_at_eof", "1",
       "-reconnect_delay_max", "2",
-       "-fflags", "+genpts+igndts+discardcorrupt",
-      "-err_detect", "ignore_err",      
-      // Buffer في المدخل لامتصاص المشاكل 
-      // ✅ INPUT BUFFERING (FFmpeg v4 safe)
-      //"-recv_buffer_size", "8000000",
-      "-probesize", "10000000",
+      "-timeout", "5000000",
+      "-rw_timeout", "5000000",
+      "-fflags", "+genpts+igndts+discardcorrupt+nobuffer",
+      "-err_detect", "ignore_err",
       "-analyzeduration", "5000000",
-
+      "-probesize", "10000000",
       "-f", "mpegts",
       "-i", s
     ];
@@ -687,10 +685,9 @@ async function startFFmpeg(item, force = false) {
     "-c:v", "copy",
     "-c:a", "copy",
     "-bsf:a", "aac_adtstoasc",
-    // Buffer في المخرج لتنعيم البث
-    "-max_muxing_queue_size", "4096",     // ✅ queue كبير
+    "-max_muxing_queue_size", "9999",
     "-flvflags", "no_duration_filesize+no_metadata",
-    "-rtmp_buffer", "10000",
+    "-rtmp_buffer", "5000",
     "-rtmp_live", "live",
     "-f", "flv",
     cache.stream_url 
