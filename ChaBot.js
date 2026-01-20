@@ -475,16 +475,13 @@ function buildInputArgsForSource(source) {
       "-reconnect_streamed", "1",
       "-reconnect_at_eof", "1",
       "-reconnect_delay_max", "2",
-      "-timeout", "5000000",
-      "-rw_timeout", "5000000",
        "-fflags", "+genpts+igndts+discardcorrupt",
       "-err_detect", "ignore_err",      
       // Buffer في المدخل لامتصاص المشاكل 
       // ✅ INPUT BUFFERING (FFmpeg v4 safe)
       "-recv_buffer_size", "8000000",
-      "-thread_queue_size", "4096",
       "-probesize", "10000000",
-      "-analyzeduration", "10000000",
+      "-analyzeduration", "5000000",
 
       "-f", "mpegts",
       "-i", s
@@ -692,8 +689,7 @@ async function startFFmpeg(item, force = false) {
     "-bsf:a", "aac_adtstoasc",
     // Buffer في المخرج لتنعيم البث
     "-max_muxing_queue_size", "4096",     // ✅ queue كبير
-    "-muxdelay", "2",                      // ✅ تأخير 2 ثانية للتنعيم
-    "-muxpreload", "2",                    // ✅ preload 2 ثانية
+    "-muxdelay", "2",                      // ✅ تأخير 2 ثانية للتنعيم ثانية
     "-flvflags", "no_duration_filesize+no_metadata",
     "-rtmp_buffer", "10000",
     "-rtmp_live", "live",
