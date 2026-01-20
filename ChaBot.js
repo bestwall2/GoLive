@@ -479,10 +479,13 @@ function buildInputArgsForSource(source) {
       "-rw_timeout", "5000000",
        "-fflags", "+genpts+igndts+discardcorrupt",
       "-err_detect", "ignore_err",      
-      // Buffer في المدخل لامتصاص المشاكل
-      "-buffer_size", "8000000",              // ✅ 8MB buffer للقراءة      
-      "-analyzeduration", "5000000",
+      // Buffer في المدخل لامتصاص المشاكل 
+      // ✅ INPUT BUFFERING (FFmpeg v4 safe)
+      "-recv_buffer_size", "8000000",
+      "-thread_queue_size", "4096",
       "-probesize", "10000000",
+      "-analyzeduration", "10000000",
+
       "-f", "mpegts",
       "-i", s
     ];
