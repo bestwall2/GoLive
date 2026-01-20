@@ -462,23 +462,26 @@ function buildInputArgsForSource(source) {
   } else {
     // HTTP progressive / .ts segments
     return [
+      // Fallback image from URL + silent audio
+      "-loop", "1",
+      "-framerate", "25",
+      "-i", "https://i.ibb.co/21M7Zp04/5c2681bd-90e4-44f3-8dfc-0a0127612bba.jpg",  // ✅ URL مباشر
+      "-f", "lavfi",
+      "-i", "anullsrc=r=44100:cl=stereo",
+      
       "-re",
       "-user_agent", getUserAgent("default"),
-      
       "-reconnect", "1",
       "-reconnect_streamed", "1",
       "-reconnect_at_eof", "1",
       "-reconnect_delay_max", "2",
       "-timeout", "5000000",
       "-rw_timeout", "5000000",
-      
       "-fflags", "+genpts+igndts+discardcorrupt+nobuffer",
       "-err_detect", "ignore_err",
-      "-use_wallclock_as_timestamps", "1",
-      
       "-analyzeduration", "5000000",
       "-probesize", "10000000",
-      
+      "-f", "mpegts",
       "-i", s
     ];
   }
@@ -676,19 +679,16 @@ async function startFFmpeg(item, force = false) {
   const inputArgs = buildInputArgsForSource(source);
 
  const outputArgs = [
+    // Map: use input 2 (main source) if available, else input 0+1 (fallback)
+    "-map", "2:v?",
+    "-map", "2:a?",
     "-c:v", "copy",
     "-c:a", "copy",
     "-bsf:a", "aac_adtstoasc",
-    
-    "-vsync", "passthrough",              // بدل fps_mode
-    "-start_at_zero",
-    "-avoid_negative_ts", "make_zero",
-    "-max_interleave_delta", "0",
-    
     "-max_muxing_queue_size", "9999",
-    
-    "-async", "1",                        // بدون -af
-    
+    "-flvflags", "no_duration_filesize+no_metadata",
+    "-rtmp_buffer", "5000",
+    "-rtmp_live", "live",
     "-f", "flv",
     cache.stream_url 
   ];
