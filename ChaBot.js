@@ -462,26 +462,18 @@ function buildInputArgsForSource(source) {
   } else {
     // HTTP progressive / .ts segments
     return [
-      // Fallback image from URL + silent audio
-    //  "-loop", "1",
-    //  "-framerate", "25",
-    //  "-i", "https://i.ibb.co/21M7Zp04/5c2681bd-90e4-44f3-8dfc-0a0127612bba.jpg",  // ✅ URL مباشر
-    //  "-f", "lavfi",
-    //  "-i", "anullsrc=r=44100:cl=stereo",
-      
       "-re",
       "-user_agent", getUserAgent("default"),
+      "-hide_banner",
       "-reconnect", "1",
       "-reconnect_streamed", "1",
-      "-reconnect_at_eof", "1",
-      "-reconnect_delay_max", "2",
-      "-timeout", "5000000",
-      "-rw_timeout", "5000000",
-      "-fflags", "+genpts+igndts+discardcorrupt+nobuffer",
-      "-err_detect", "ignore_err",
+      "-reconnect_delay_max", "15",
+      "-rw_timeout", "0",
+      "-timeout", "0",
       "-analyzeduration", "5000000",
-      "-probesize", "10000000",
-      "-f", "mpegts",
+      "-probesize", "5000000",
+      "-fflags", "+genpts+discardcorrupt",
+      "-err_detect", "ignore_err",
       "-i", s
     ];
   }
