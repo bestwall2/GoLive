@@ -477,8 +477,10 @@ function buildInputArgsForSource(source) {
       "-reconnect_delay_max", "2",
       "-timeout", "5000000",
       "-rw_timeout", "5000000",
-      "-fflags", "+genpts+igndts+discardcorrupt+nobuffer",
-      "-err_detect", "ignore_err",
+       "-fflags", "+genpts+igndts+discardcorrupt",
+      "-err_detect", "ignore_err",      
+      // Buffer في المدخل لامتصاص المشاكل
+      "-buffer_size", "8000000",              // ✅ 8MB buffer للقراءة      
       "-analyzeduration", "5000000",
       "-probesize", "10000000",
       "-f", "mpegts",
@@ -685,9 +687,12 @@ async function startFFmpeg(item, force = false) {
     "-c:v", "copy",
     "-c:a", "copy",
     "-bsf:a", "aac_adtstoasc",
-    "-max_muxing_queue_size", "9999",
+    // Buffer في المخرج لتنعيم البث
+    "-max_muxing_queue_size", "4096",     // ✅ queue كبير
+    "-muxdelay", "2",                      // ✅ تأخير 2 ثانية للتنعيم
+    "-muxpreload", "2",                    // ✅ preload 2 ثانية
     "-flvflags", "no_duration_filesize+no_metadata",
-    "-rtmp_buffer", "5000",
+    "-rtmp_buffer", "10000",
     "-rtmp_live", "live",
     "-f", "flv",
     cache.stream_url 
