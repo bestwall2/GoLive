@@ -671,12 +671,11 @@ async function startFFmpeg(item, force = false) {
   const inputArgs = buildInputArgsForSource(source);
 
  const outputArgs = [
-    // Map: use input 2 (main source) if available, else input 0+1 (fallback)
-    //"-map", "2:v?",
-   // "-map", "2:a?",
     "-c:v", "copy",
     "-c:a", "copy",
-    "-bsf:a", "aac_adtstoasc",
+    "-r", "30",
+    "-f", "flv",
+    "-loglevel", "error",
     cache.stream_url 
   ];
 
