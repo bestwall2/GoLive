@@ -22,7 +22,7 @@ const CONFIG = {
 
   // Connection orchestration
   // Increased to support running 12 servers at once
-  maxConcurrentConnects: 12, // number of simultaneous RTMPS handshake attempts allowed
+  maxConcurrentConnects: 14, // number of simultaneous RTMPS handshake attempts allowed
   connectStabilityWindow: 10_000, // ms: after process 'start', wait this to call it stable (release slot earlier if desired)
   connectTimeout: 20_000, // ms: if no 'start' event in this time after run(), consider startup failed
   startupBackoffBase: 30_000, // base backoff for startup failures
