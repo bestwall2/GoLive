@@ -462,15 +462,14 @@ function buildInputArgsForSource(source) {
   } else {
     // HTTP progressive / .ts segments
     return [
-      "-loglevel", "level+info",
-      "-err_detect", "ignore_err",
-      "-reconnect", "1",
-      "-reconnect_at_eof", "1",
-      "-reconnect_streamed", "1",
-      "-reconnect_delay_max", "5",
-      "-thread_queue_size", "4096",
-      "-re",
-      "-i", s
+      '-loglevel', 'level+info',
+      '-err_detect', 'ignore_err',
+      '-reconnect', '1',
+      '-reconnect_at_eof', '1',
+      '-reconnect_streamed', '1',
+      '-reconnect_delay_max', '1',
+      '-re',
+      '-i', s
     ];
   }
 }
@@ -667,14 +666,14 @@ async function startFFmpeg(item, force = false) {
   const inputArgs = buildInputArgsForSource(source);
 
  const outputArgs = [
-    "-flags", "+low_delay",
-    "-map", "0:0",
-    "-codec:v", "copy",
-    "-map", "0:1",
-    "-codec:a", "aac",
-    "-attempt_recovery", "1",
-    "-recovery_wait_time", "15",
-    "-f", "flv",
+    '-flags', '+low_delay',
+    '-map', '0:0',
+    '-codec:v', 'copy',
+    '-map', '0:1',
+    '-codec:a', 'copy',
+    '-attempt_recovery', '1',
+    '-recovery_wait_time', '15',
+    '-f', 'flv',
     cache.stream_url 
   ];
 
