@@ -468,9 +468,8 @@ function buildInputArgsForSource(source) {
       "-reconnect_at_eof", "1",
       "-reconnect_streamed", "1",
       "-reconnect_delay_max", "5",
-      "-probesize", "100M",
-      "-analyzeduration", "100M",
-      "-thread_queue_size", "16384",
+      "-thread_queue_size", "4096",
+      "-re",
       "-i", s
     ];
   }
@@ -668,16 +667,14 @@ async function startFFmpeg(item, force = false) {
   const inputArgs = buildInputArgsForSource(source);
 
  const outputArgs = [
-    "-flags", "+global_header",
+    "-flags", "+low_delay",
     "-map", "0:0",
-    "-c:v", "copy",
-    "-bsf:v", "h264_mp4toannexb",
+    "-codec:v", "copy",
     "-map", "0:1",
-    "-c:a", "aac",
+    "-codec:a", "aac",
+    "-attempt_recovery", "1",
+    "-recovery_wait_time", "15",
     "-f", "flv",
-    "-rtmp_buffer", "60000", // 60 second output buffer
-    "-rtmp_live", "live",
-
     cache.stream_url 
   ];
 
