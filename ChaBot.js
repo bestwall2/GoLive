@@ -462,18 +462,15 @@ function buildInputArgsForSource(source) {
   } else {
     // HTTP progressive / .ts segments
     return [
-      "-re",
-      "-user_agent", getUserAgent("default"),
-      "-hide_banner",
-      "-reconnect", "1",
-      "-reconnect_streamed", "1",
-      "-reconnect_delay_max", "15",
-      "-rw_timeout", "0",
-      "-timeout", "0",
-      "-analyzeduration", "5000000",
-      "-probesize", "5000000",
-      "-fflags", "+genpts+discardcorrupt",
+      "-loglevel", "error",
       "-err_detect", "ignore_err",
+      "-reconnect", "1",
+      "-reconnect_at_eof", "1",
+      "-reconnect_streamed", "1",
+      "-reconnect_delay_max", "5",
+      "-probesize", "100M",
+      "-analyzeduration", "100M",
+      "-thread_queue_size", "16384", // High packet buffer
       "-i", s
     ];
   }
@@ -671,11 +668,11 @@ async function startFFmpeg(item, force = false) {
   const inputArgs = buildInputArgsForSource(source);
 
  const outputArgs = [
+    "-map", "0:0",
     "-c:v", "copy",
-    "-c:a", "copy",
-    "-r", "30",
+    "-map", "0:1",
+    "-c:a", "aac",
     "-f", "flv",
-    "-loglevel", "error",
     cache.stream_url 
   ];
 
