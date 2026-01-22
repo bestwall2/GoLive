@@ -6,11 +6,16 @@ import session from 'express-session';
 import { spawn, exec } from 'child_process';
 import https from 'https';
 import http from 'http';
+import { fileURLToPath } from 'url';  // Add this import
+
+// Create __dirname for ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Load environment variables
 dotenv.config();
 
-// JSON file path
+// JSON file paths (now __dirname works)
 const DATA_FILE = path.join(__dirname, 'channels.json');
 const CACHE_FILE = path.join(__dirname, '..', 'streams_cache.json');
 
