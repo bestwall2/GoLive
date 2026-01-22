@@ -1,11 +1,11 @@
-const express = require('express');
-const path = require('path');
-const fs = require('fs');
-const dotenv = require('dotenv');
-const session = require('express-session');
-const { spawn, exec } = require('child_process');
-const https = require('https');
-const http = require('http');
+import express from 'express';
+import path from 'path';
+import fs from 'fs';
+import dotenv from 'dotenv';
+import session from 'express-session';
+import { spawn, exec } from 'child_process';
+import https from 'https';
+import http from 'http';
 
 // Load environment variables
 dotenv.config();
