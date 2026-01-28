@@ -528,11 +528,32 @@ async function handleCommand(message, sock) {
   const text = message.message?.conversation || message.message?.extendedTextMessage?.text || '';
   const chatId = message.key.remoteJid;
   
-  if (!text.trim()) return;
+  console.log(`🔧 handleCommand called`);
+  console.log(`   ChatID: ${chatId}`);
+  console.log(`   Text: "${text}"`);
+  console.log(`   Text length: ${text.length}`);
+  console.log(`   Trimmed: "${text.trim()}"`);
+  
+  if (!text.trim()) {
+    console.log(`⚠️ Empty message, skipping`);
+    return;
+  }
 
-  console.log(`📩 Received from ${chatId}: ${text}`);
+  console.log(`📩 Processing command from ${chatId}: ${text}`);
 
   // ===== ADMIN COMMANDS =====
+  // Ping command - for testing bot response
+  if (text.startsWith('/ping') || text.startsWith('!ping') || text.startsWith('.ping')) {
+    console.log(`🏓 Ping command received from ${chatId}`);
+    await sendMessage(chatId, 
+      `🏓 *Pong!*\n\n` +
+      `✅ البوت يعمل بشكل صحيح\n` +
+      `🆔 Chat ID: \`${chatId}\`\n` +
+      `👤 Admin: ${isAdminUser(chatId) ? 'نعم ✅' : 'لا ❌'}\n` +
+      `🔐 Allowed: ${isAllowedChat(chatId) ? 'نعم ✅' : 'لا ❌'}`, sock);
+    return;
+  }
+
   // /allow command
   if ((text.startsWith('/allow') || text.startsWith('!allow') || text.startsWith('.allow')) && isAdminUser(chatId)) {
     const input = text.substring(6).trim();
@@ -1062,6 +1083,17 @@ async function startBot() {
         
         const allowedChats = loadAllowedChats();
         console.log(`📊 عدد Chat IDs المسموحة: ${allowedChats.length}`);
+        console.log(`📋 Allowed Chat IDs:`);
+        allowedChats.forEach((chat, index) => {
+          const isGroup = chat.includes('@g.us');
+          const icon = isGroup ? '👥' : '👤';
+          console.log(`   ${index + 1}. ${icon} ${chat}`);
+        });
+        console.log(`\n👨‍💼 Admin Numbers:`);
+        ADMIN_NUMBERS.forEach((admin, index) => {
+          console.log(`   ${index + 1}. ${admin}`);
+        });
+        console.log(`\n✅ البوت جاهز لاستقبال الرسائل!`);
       }
 
       if (connection === 'close') {
@@ -1103,18 +1135,39 @@ async function startBot() {
     });
 
     // ===== MESSAGE HANDLER =====
-    KnightBot.ev.on('messages.upsert', async ({ messages }) => {
+    KnightBot.ev.on('messages.upsert', async ({ messages, type }) => {
+      console.log(`📨 Received ${messages.length} message(s), type: ${type}`);
+      
       for (const m of messages) {
-        if (!m.message || m.key.fromMe) continue;
-    
-        const from = m.key.remoteJid;
-        console.log(`📩 Message from: ${from}`);
+        try {
+          // Skip if no message or from self
+          if (!m.message || m.key.fromMe) {
+            console.log(`⏭️ Skipping message (fromMe: ${m.key.fromMe}, hasMessage: ${!!m.message})`);
+            continue;
+          }
+      
+          const from = m.key.remoteJid;
+          
+          // Extract message text
+          const messageText = m.message?.conversation || 
+                             m.message?.extendedTextMessage?.text || 
+                             '';
+          
+          console.log(`📩 Message from: ${from}`);
+          console.log(`📝 Message text: "${messageText}"`);
+          console.log(`👤 Is Admin: ${isAdminUser(from)}`);
+          console.log(`✅ Is Allowed: ${isAllowedChat(from)}`);
 
-        // Check if user/group is allowed OR is admin
-        if (isAdminUser(from) || isAllowedChat(from)) {
-          await handleCommand(m, KnightBot);
-        } else {
-          console.log(`❌ Blocked message from: ${from}`);
+          // Check if user/group is allowed OR is admin
+          if (isAdminUser(from) || isAllowedChat(from)) {
+            console.log(`✅ Processing command from: ${from}`);
+            await handleCommand(m, KnightBot);
+          } else {
+            console.log(`❌ Blocked message from: ${from}`);
+          }
+        } catch (error) {
+          console.error('❌ Error processing message:', error);
+          stats.errors++;
         }
       }
     });
@@ -1170,7 +1223,11 @@ async function startBot() {
 console.log('🚀 بدء تشغيل بوت البث على WhatsApp...');
 console.log(`📱 الرقم: ${PHONE_NUMBER}`);
 console.log(`📂 مجلد الجلسة: ${SESSION_DIR}`);
-console.log(`👨‍💼 Admins: ${ADMIN_NUMBERS.join(', ')}`);
+console.log(`👨‍💼 Admin Numbers (${ADMIN_NUMBERS.length}):`);
+ADMIN_NUMBERS.forEach((admin, index) => {
+  console.log(`   ${index + 1}. ${admin}`);
+});
+console.log(`📋 Allowed Chats File: ${ALLOWED_CHATS_FILE}`);
 
 startBot().catch(err => {
   console.error('❌ تحطم البوت:', err);
