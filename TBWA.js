@@ -641,7 +641,8 @@ async function handleCommand(message, sock) {
   }
 
   // Check if user is allowed before processing other commands
-  if (!isAllowedChat(chatId)) {
+  // Admins bypass this check
+  if (!isAdminUser(chatId) && !isAllowedChat(chatId)) {
     // Silently ignore - per user request
     return;
   }
