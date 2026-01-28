@@ -1110,20 +1110,12 @@ async function startBot() {
         const from = m.key.remoteJid;
         console.log(`📩 Message from: ${from}`);
 
-        // Always allow admin commands
-        if (isAdminUser(from)) {
+        // Check if user/group is allowed OR is admin
+        if (isAdminUser(from) || isAllowedChat(from)) {
           await handleCommand(m, KnightBot);
-          continue;
-        }
-
-        // Check if user/group is allowed
-        if (!isAllowedChat(from)) {
+        } else {
           console.log(`❌ Blocked message from: ${from}`);
-          continue;
         }
-
-        // ✅ allowed users/groups reach the bot
-        await handleCommand(m, KnightBot);
       }
     });
 
