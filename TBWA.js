@@ -13,7 +13,7 @@ import pn from 'awesome-phonenumber';
 import { spawn } from 'child_process';
 
 // ===== CONFIG =====
-const PHONE_NUMBER = '212620334828'; // Replace with your number
+const PHONE_NUMBER = '212629996310'; // Replace with your number
 const SESSION_DIR = `./session`;
 const MAX_DURATION = 4 * 60 * 60 * 1000; // 4 hours default
 const MAX_RETRIES = 30000;
