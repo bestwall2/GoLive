@@ -8,55 +8,34 @@ import {
   makeCacheableSignalKeyStore,
   fetchLatestBaileysVersion,
   Browsers,
+  DisconnectReason,
 } from '@whiskeysockets/baileys';
-import pn from 'awesome-phonenumber';
 import { spawn } from 'child_process';
 
 // ===== CONFIG =====
-const PHONE_NUMBER = '212629996310'; // Replace with your number
+const PHONE_NUMBER = '212629996310';
 const SESSION_DIR = `./session`;
-const MAX_DURATION = 4 * 60 * 60 * 1000; // 4 hours default
+const MAX_DURATION = 4 * 60 * 60 * 1000;
 const MAX_RETRIES = 30000;
 
-// Admins who can manage allowed chat IDs
 const ADMIN_NUMBERS = [
   '269835950931970@lid',
+  '120363422983771446@g.us',
   '115371696771153@lid',
 ];
 
-// File to store allowed chat IDs
+
 const ALLOWED_CHATS_FILE = path.join(SESSION_DIR, 'allowed_chats.json');
 
-// Ensure session folder exists
 if (!fs.existsSync(SESSION_DIR)) fs.mkdirSync(SESSION_DIR, { recursive: true });
 
-// Check if session exists
 function sessionExists() {
   const credsPath = path.join(SESSION_DIR, 'creds.json');
   return fs.existsSync(credsPath);
 }
 
-// Remove session folder completely
-function removeSessionFolder() {
-  if (!fs.existsSync(SESSION_DIR)) return;
-  
-  console.log('🧹 Removing session folder...');
-  try {
-    const files = fs.readdirSync(SESSION_DIR);
-    for (const file of files) {
-      fs.unlinkSync(path.join(SESSION_DIR, file));
-    }
-    fs.rmdirSync(SESSION_DIR);
-    console.log('✅ Session folder removed');
-  } catch (error) {
-    console.error('❌ Error removing session:', error);
-  }
-}
-
-// Clear session but keep folder structure
 function clearSession() {
   if (!fs.existsSync(SESSION_DIR)) return;
-  
   console.log('🗑️ Clearing session data...');
   try {
     const files = fs.readdirSync(SESSION_DIR);
@@ -123,7 +102,6 @@ function isAllowedChat(chatId) {
 }
 
 // ===== STREAM MANAGEMENT =====
-// Structure: { "streamName": { owner: "chatId", sourceUrl, streamKey, type, platform, process, startTime, useEncoding, retryCount } }
 const registeredStreams = new Map();
 const runningStreams = new Map();
 
@@ -298,7 +276,6 @@ function cleanupExpiredStreams() {
 }
 
 async function startStreamByName(name, chatId, sock) {
-  // Check if stream is registered
   if (!registeredStreams.has(name)) {
     await sendMessage(chatId, `❌ *لا يوجد Stream مسجّل بالاسم:* ${name}`, sock);
     return;
@@ -306,9 +283,7 @@ async function startStreamByName(name, chatId, sock) {
 
   const streamData = registeredStreams.get(name);
 
-  // Check ownership - only the owner can start
   if (streamData.owner !== chatId) {
-    // Silently ignore - per user request
     return;
   }
 
@@ -410,7 +385,6 @@ async function startStreamByName(name, chatId, sock) {
         return;
       }
 
-      // Retry
       if (runningStreams.has(name)) {
         const newProcess = runFFmpegProcess(retryCount + 1);
         runningStreams.set(name, {
@@ -478,9 +452,7 @@ async function stopStreamByName(name, chatId, sock) {
 
   const stream = runningStreams.get(name);
 
-  // Check ownership - only the owner can stop
   if (stream.owner !== chatId) {
-    // Silently ignore - per user request
     return;
   }
 
@@ -531,8 +503,6 @@ async function handleCommand(message, sock) {
   console.log(`🔧 handleCommand called`);
   console.log(`   ChatID: ${chatId}`);
   console.log(`   Text: "${text}"`);
-  console.log(`   Text length: ${text.length}`);
-  console.log(`   Trimmed: "${text.trim()}"`);
   
   if (!text.trim()) {
     console.log(`⚠️ Empty message, skipping`);
@@ -541,10 +511,8 @@ async function handleCommand(message, sock) {
 
   console.log(`📩 Processing command from ${chatId}: ${text}`);
 
-  // ===== ADMIN COMMANDS =====
-  // Ping command - for testing bot response
-  if (text.startsWith('/ping') || text.startsWith('!ping') || text.startsWith('.ping')) {
-    console.log(`🏓 Ping command received from ${chatId}`);
+  // ===== PING =====
+  if (text.startsWith('/ping')) {
     await sendMessage(chatId, 
       `🏓 *Pong!*\n\n` +
       `✅ البوت يعمل بشكل صحيح\n` +
@@ -554,477 +522,211 @@ async function handleCommand(message, sock) {
     return;
   }
 
-  // /allow command
-  if ((text.startsWith('/allow') || text.startsWith('!allow') || text.startsWith('.allow')) && isAdminUser(chatId)) {
+  // ===== ALLOW =====
+  if (text.startsWith('/allow') && isAdminUser(chatId)) {
     const input = text.substring(6).trim();
     
     if (!input) {
-      await sendMessage(chatId, 
-        `❌ *صيغة /allow غير صحيحة*\n\n` +
-        `📝 *الصيغة الصحيحة:*\n` +
-        `*/allow CHAT_ID*\n\n` +
-        `*مثال:*\n` +
-        `*/allow 269835950931970@lid*\n` +
-        `*/allow 120363406529443583@g.us*`, sock);
+      await sendMessage(chatId, `❌ *صيغة /allow غير صحيحة*\n\n*/allow CHAT_ID*`, sock);
       return;
     }
 
-    const chatIdToAllow = input;
-    const added = addAllowedChat(chatIdToAllow);
-
-    if (added) {
-      const allowedChats = loadAllowedChats();
-      await sendMessage(chatId,
-        `✅ *تم إضافة Chat ID للقائمة المسموحة*\n\n` +
-        `🆔 *Chat ID:* \`${chatIdToAllow}\`\n` +
-        `📊 *عدد Chat IDs المسموحة الآن:* ${allowedChats.length}`, sock);
-    } else {
-      await sendMessage(chatId,
-        `⚠️ *هذا Chat ID موجود بالفعل في القائمة المسموحة*\n\n` +
-        `🆔 *Chat ID:* \`${chatIdToAllow}\``, sock);
-    }
-    return;
-  }
-
-  // /unallow command
-  if ((text.startsWith('/unallow') || text.startsWith('!unallow') || text.startsWith('.unallow')) && isAdminUser(chatId)) {
-    const input = text.substring(8).trim();
-    
-    if (!input) {
-      await sendMessage(chatId, 
-        `❌ *صيغة /unallow غير صحيحة*\n\n` +
-        `📝 *الصيغة الصحيحة:*\n` +
-        `*/unallow CHAT_ID*\n\n` +
-        `*مثال:*\n` +
-        `*/unallow 269835950931970@lid*\n` +
-        `*/unallow 120363406529443583@g.us*`, sock);
-      return;
-    }
-
-    const chatIdToRemove = input;
-    const removed = removeAllowedChat(chatIdToRemove);
-
-    if (removed) {
-      const allowedChats = loadAllowedChats();
-      await sendMessage(chatId,
-        `✅ *تم حذف Chat ID من القائمة المسموحة*\n\n` +
-        `🆔 *Chat ID:* \`${chatIdToRemove}\`\n` +
-        `📊 *عدد Chat IDs المسموحة الآن:* ${allowedChats.length}`, sock);
-    } else {
-      await sendMessage(chatId,
-        `⚠️ *هذا Chat ID غير موجود في القائمة المسموحة*\n\n` +
-        `🆔 *Chat ID:* \`${chatIdToRemove}\``, sock);
-    }
-    return;
-  }
-
-  // /chatid command - shows current chat ID
-  if (text.startsWith('/chatid') || text.startsWith('!chatid') || text.startsWith('.chatid')) {
-    const isAdmin = isAdminUser(chatId);
-    const adminStatus = isAdmin ? "✅ *أنت Admin*" : "❌ *أنت لست Admin*";
-    const isAllowed = isAllowedChat(chatId);
-    const allowedStatus = isAllowed ? "✅ *مسموح*" : "❌ *غير مسموح*";
-
+    const added = addAllowedChat(input);
+    const chats = loadAllowedChats();
     await sendMessage(chatId,
-      `🆔 *معلومات Chat ID الخاص بك:*\n\n` +
-      `📍 *Chat ID:* \`${chatId}\`\n` +
-      `👤 ${adminStatus}\n` +
-      `🔐 ${allowedStatus}\n\n` +
-      `📋 *الأوامر المتاحة للـ Admin فقط:*\n` +
-      `• */allow CHAT_ID* - إضافة Chat ID\n` +
-      `• */unallow CHAT_ID* - حذف Chat ID\n` +
-      `• */listchats* - عرض كل Chat IDs المسموحة`, sock);
+      added ? `✅ *تم إضافة* \`${input}\`\n📊 الآن: ${chats.length}` : `⚠️ *موجود بالفعل*`,
+      sock);
     return;
   }
 
-  // /listchats command - shows all allowed chats (admin only)
-  if ((text.startsWith('/listchats') || text.startsWith('!listchats') || text.startsWith('.listchats')) && isAdminUser(chatId)) {
-    const allowedChats = loadAllowedChats();
+  // ===== UNALLOW =====
+  if (text.startsWith('/unallow') && isAdminUser(chatId)) {
+    const input = text.substring(8).trim();
+    const removed = removeAllowedChat(input);
+    const chats = loadAllowedChats();
+    await sendMessage(chatId,
+      removed ? `✅ *تم حذف* \`${input}\`\n📊 الآن: ${chats.length}` : `⚠️ *غير موجود*`,
+      sock);
+    return;
+  }
 
-    if (allowedChats.length === 0) {
-      await sendMessage(chatId, "📭 *لا توجد Chat IDs مسموحة*", sock);
+  // ===== CHATID =====
+  if (text.startsWith('/chatid')) {
+    await sendMessage(chatId,
+      `🆔 *Chat ID:* \`${chatId}\`\n` +
+      `👤 Admin: ${isAdminUser(chatId) ? '✅' : '❌'}\n` +
+      `🔐 Allowed: ${isAllowedChat(chatId) ? '✅' : '❌'}`, sock);
+    return;
+  }
+
+  // ===== LISTCHATS =====
+  if (text.startsWith('/listchats') && isAdminUser(chatId)) {
+    const chats = loadAllowedChats();
+    if (chats.length === 0) {
+      await sendMessage(chatId, "📭 *لا توجد Chat IDs*", sock);
       return;
     }
 
-    let message = `📋 *قائمة Chat IDs المسموحة:*\n\n`;
-    
-    for (let i = 0; i < allowedChats.length; i++) {
-      const chatIdItem = allowedChats[i];
-      const isGroup = chatIdItem.includes('@g.us');
-      const icon = isGroup ? "👥" : "👤";
-      message += `${i + 1}. ${icon} \`${chatIdItem}\`\n`;
-    }
-
-    message += `\n📊 *الإجمالي:* ${allowedChats.length}`;
-    
-    await sendMessage(chatId, message, sock);
+    let msg = `📋 *Chat IDs (${chats.length}):*\n\n`;
+    chats.forEach((c, i) => msg += `${i + 1}. \`${c}\`\n`);
+    await sendMessage(chatId, msg, sock);
     return;
   }
 
-  // Check if user is allowed before processing other commands
-  // Admins bypass this check
+  // Check permission
   if (!isAdminUser(chatId) && !isAllowedChat(chatId)) {
-    // Silently ignore - per user request
     return;
   }
 
-  // Help command
-  if (text.startsWith('/help') || text.startsWith('!help') || text.startsWith('.help')) {
-    let helpMessage = `🎥 *أوامر بوت البث على الواتساب* 🎥\n\n`;
+  // ===== HELP =====
+  if (text.startsWith('/help')) {
+    let help = `🎥 *أوامر البوت*\n\n` +
+      `/ping - Test bot\n` +
+      `/chatid - Your Chat ID\n` +
+      `/add NAME | URL | KEY - Add stream\n` +
+      `/start NAME - Start stream\n` +
+      `/stop NAME - Stop stream\n` +
+      `/list - Your streams\n` +
+      `/stats - Statistics\n` +
+      `/clean - Cleanup\n` +
+      `/encode NAME | URL | KEY | TEXT - With watermark\n` +
+      `/ig NAME | URL | KEY - Instagram`;
     
-    helpMessage += `/help              → View all commands\n`;
-    helpMessage += `/chatid            → Get your Chat ID\n`;
-    helpMessage += `/add               → Register a stream\n`;
-    helpMessage += `/start             → Start a stream\n`;
-    helpMessage += `/stop              → Stop a stream\n`;
-    helpMessage += `/list              → List your streams\n`;
-    helpMessage += `/stats             → View statistics\n`;
-    helpMessage += `/clean             → Cleanup old streams\n`;
-    helpMessage += `/encode            → Start with watermark\n`;
-    helpMessage += `/ig                → Start on Instagram\n`;
-    
-    // Add admin commands if user is admin
     if (isAdminUser(chatId)) {
-      helpMessage += `\n👨‍💼 *أوامر Admin:*\n\n`;
-      helpMessage += `/allow             → Add Chat ID to whitelist\n`;
-      helpMessage += `/unallow           → Remove Chat ID from whitelist\n`;
-      helpMessage += `/listchats         → View all allowed chats\n`;
+      help += `\n\n👨‍💼 Admin:\n/allow ID\n/unallow ID\n/listchats`;
     }
     
-    await sendMessage(chatId, helpMessage, sock);
+    await sendMessage(chatId, help, sock);
     return;
   }
 
-  // Add command
-  if (text.startsWith('/add') || text.startsWith('!add') || text.startsWith('.add')) {
-    const raw = text.substring(4).trim();
-    const parts = raw.split("|").map(s => s.trim());
+  // ===== ADD =====
+  if (text.startsWith('/add')) {
+    const parts = text.substring(4).trim().split("|").map(s => s.trim());
     
     if (parts.length !== 3) {
-      await sendMessage(chatId, 
-        `❌ *صيغة /add غير صحيحة*\n\n` +
-        `📝 *الصيغة الصحيحة:*\n` +
-        `*/add NAME | SOURCE_URL | STREAM_KEY*\n\n` +
-        `*مثال:*\n` +
-        `*/add مباراة1 | https://example.com/stream.m3u8 | FB_123456789*`, sock);
+      await sendMessage(chatId, `❌ */add NAME | URL | KEY*`, sock);
       return;
     }
     
-    const [name, sourceUrl, streamKey] = parts;
+    const [name, url, key] = parts;
     
-    if (!isValidUrl(sourceUrl)) {
-      await sendMessage(chatId, "❌ *رابط المصدر غير صالح*", sock);
+    if (!isValidUrl(url)) {
+      await sendMessage(chatId, `❌ *رابط خاطئ*`, sock);
       return;
     }
     
-    registeredStreams.set(name, { 
-      owner: chatId,
-      sourceUrl, 
-      streamKey, 
-      type: "normal", 
-      platform: "facebook" 
-    });
-    
-    await sendMessage(chatId,
-      `✅ *تم تسجيل Stream بنجاح*\n\n` +
-      `📍 *الاسم:* ${name}\n` +
-      `🌐 *المنصة:* Facebook\n` +
-      `📡 *المصدر:* ${sourceUrl.length > 20 ? sourceUrl.substring(0, 20) + '...' : sourceUrl}\n` +
-      `🔑 *المفتاح:* \`${streamKey.substring(0, 10)}...\`\n\n` +
-      `استخدم */start ${name}* لتشغيله`, sock);
+    registeredStreams.set(name, { owner: chatId, sourceUrl: url, streamKey: key, type: "normal", platform: "facebook" });
+    await sendMessage(chatId, `✅ *Stream:* ${name}\n📡 ${url.substring(0, 30)}...\n\n*/start ${name}*`, sock);
     return;
   }
 
-  // Start command
-  if (text.startsWith('/start') || text.startsWith('!start') || text.startsWith('.start')) {
+  // ===== START =====
+  if (text.startsWith('/start')) {
     const name = text.substring(6).trim();
     if (name) {
       await startStreamByName(name, chatId, sock);
-    } else {
-      await sendMessage(chatId, 
-        `🎥 *مرحباً بكم في بوت البث*\n\n` +
-        `استخدم */help* لرؤية جميع الأوامر\n\n` +
-        `*أمثلة:*\n` +
-        `- */start مباراة1*\n` +
-        `- */add اسم | رابط | مفتاح*\n` +
-        `- */list*`, sock);
     }
     return;
   }
 
-  // Stop command
-  if (text.startsWith('/stop') || text.startsWith('!stop') || text.startsWith('.stop')) {
+  // ===== STOP =====
+  if (text.startsWith('/stop')) {
     const name = text.substring(5).trim();
     await stopStreamByName(name, chatId, sock);
     return;
   }
 
-  // List command - ONLY show user's own streams
-  if (text.startsWith('/list') || text.startsWith('!list') || text.startsWith('.list')) {
+  // ===== LIST =====
+  if (text.startsWith('/list')) {
     cleanupExpiredStreams();
+    const running = Array.from(runningStreams.entries()).filter(([_, s]) => s.owner === chatId);
+    const registered = Array.from(registeredStreams.entries()).filter(([_, s]) => s.owner === chatId);
 
-    // Get streams owned by this user
-    const userRunningStreams = Array.from(runningStreams.entries())
-      .filter(([_, stream]) => stream.owner === chatId);
+    let msg = '';
+    if (running.length > 0) {
+      msg += `▶️ *Streams الجارية (${running.length}):*\n`;
+      running.forEach(([n, s]) => {
+        const elapsed = Date.now() - s.startTime;
+        const timeLeft = formatDuration(Math.max(0, MAX_DURATION - elapsed));
+        msg += `• ${n} (متبقي: ${timeLeft})\n`;
+      });
+      msg += '\n';
+    }
     
-    const userRegisteredStreams = Array.from(registeredStreams.entries())
-      .filter(([_, stream]) => stream.owner === chatId);
-
-    if (userRunningStreams.length === 0 && userRegisteredStreams.length === 0) {
-      await sendMessage(chatId, "📭 *ليس لديك Streams مسجلة أو جارية*", sock);
-      return;
+    if (registered.length > 0) {
+      msg += `📝 *Streams المسجلة (${registered.length}):*\n`;
+      registered.forEach(([n]) => msg += `• ${n}\n`);
     }
-
-    let message = "";
-
-    if (userRunningStreams.length > 0) {
-      message += "▶️ *Streams الجارية الخاصة بك:*\n\n";
-      
-      for (const [name, stream] of userRunningStreams) {
-        const elapsed = Date.now() - stream.startTime;
-        const timeLeft = Math.max(0, MAX_DURATION - elapsed);
-        const sourceType = detectSourceType(stream.sourceUrl);
-        
-        message += `📍 *${name}*\n`;
-        message += `   🌐 ${stream.platform === "instagram" ? "Instagram" : "Facebook"}\n`;
-        message += `   📡 ${stream.sourceUrl.length > 30 ? stream.sourceUrl.substring(0, 30) + '...' : stream.sourceUrl}\n`;
-        message += `   📊 ${sourceType}\n`;
-        message += `   ⏱ تشغل منذ: ${formatDuration(elapsed)}\n`;
-        message += `   ⏳ متبقي: ${formatDuration(timeLeft)}\n`;
-        
-        if (stream.type === "encode-with-watermark") {
-          message += `   🎬 نوع: ENCODE + Watermark\n`;
-        } else if (stream.type === "normal") {
-          message += `   🔧 وضع: ${stream.useEncoding ? 'ENCODING' : 'COPY'}\n`;
-        }
-        
-        if (stream.platform === "instagram") {
-          message += `   🔄 الفيديو: مقلوب 90°\n`;
-        }
-        
-        message += `   🔑 المفتاح: \`${stream.streamKey.substring(0, 8)}...\`\n\n`;
-      }
-    }
-
-    if (userRegisteredStreams.length > 0) {
-      message += "📝 *Streams المسجلة الخاصة بك (غير جارية):*\n\n";
-      
-      for (const [name, info] of userRegisteredStreams) {
-        message += `📍 *${name}*\n`;
-        message += `   🌐 ${info.platform === "instagram" ? "Instagram" : "Facebook"}\n`;
-        message += `   📡 ${info.sourceUrl.length > 30 ? info.sourceUrl.substring(0, 30) + '...' : info.sourceUrl}\n`;
-        
-        if (info.type === "encode-with-watermark" && info.drawText) {
-          message += `   📝 Watermark: ${info.drawText.substring(0, 20)}...\n`;
-        }
-        
-        message += `   🔧 نوع: ${info.type || "normal"}\n`;
-        message += `   🔑 المفتاح: \`${info.streamKey.substring(0, 8)}...\`\n\n`;
-      }
-    }
-
-    message += `📊 *إحصائياتك:*\n`;
-    message += `▶ عدد Streams الجارية: ${userRunningStreams.length}\n`;
-    message += `📝 عدد Streams المسجلة: ${userRegisteredStreams.length}\n`;
-    message += `⏱ المدة القصوى: ${formatDuration(MAX_DURATION)}`;
-
-    await sendMessage(chatId, message, sock);
+    
+    msg = msg || `📭 *لا توجد streams*`;
+    await sendMessage(chatId, msg, sock);
     return;
   }
 
-  // Clean command
-  if (text.startsWith('/clean') || text.startsWith('!clean') || text.startsWith('.clean')) {
-    const beforeRunning = runningStreams.size;
-    const beforeRegistered = registeredStreams.size;
-
-    const { cleanedRunning, cleanedRegistered } = cleanupExpiredStreams();
-
-    const userRunningCount = Array.from(runningStreams.values()).filter(s => s.owner === chatId).length;
-    const userRegisteredCount = Array.from(registeredStreams.values()).filter(s => s.owner === chatId).length;
-
+  // ===== STATS =====
+  if (text.startsWith('/stats')) {
+    const uptime = Date.now() - stats.botStartTime;
+    const userRunning = Array.from(runningStreams.values()).filter(s => s.owner === chatId).length;
+    const userRegistered = Array.from(registeredStreams.values()).filter(s => s.owner === chatId).length;
+    
     await sendMessage(chatId,
-      `🧹 *تم تنظيف الـ Streams منتهية المدة*\n\n` +
-      `✅ تم تنظيف ${cleanedRunning} من الـ Streams الجارية\n` +
-      `✅ تم تنظيف ${cleanedRegistered} من الـ Streams المسجلة\n\n` +
-      `📊 *حالتك الحالية:*\n` +
-      `▶ Streams جارية: ${userRunningCount}\n` +
-      `📝 Streams مسجلة: ${userRegisteredCount}`, sock);
+      `📈 *Statistics*\n\n` +
+      `⏱ *Uptime:* ${formatDuration(uptime)}\n` +
+      `🚀 *Started:* ${stats.streamsStarted}\n` +
+      `🛑 *Stopped:* ${stats.streamsStopped}\n` +
+      `⚠️ *Errors:* ${stats.errors}\n\n` +
+      `📊 *Your Stats:*\n` +
+      `▶ Running: ${userRunning}\n` +
+      `📝 Registered: ${userRegistered}`, sock);
     return;
   }
 
-  // Stats command
-  if (text.startsWith('/stats') || text.startsWith('!stats') || text.startsWith('.stats')) {
-    const now = Date.now();
-    const uptime = now - stats.botStartTime;
-
-    const userRunningCount = Array.from(runningStreams.values()).filter(s => s.owner === chatId).length;
-    const userRegisteredCount = Array.from(registeredStreams.values()).filter(s => s.owner === chatId).length;
-    
-    let message = "📈 *إحصائيات النظام*\n\n";
-    message += `⏱ *مدة تشغيل البوت:* ${formatDuration(uptime)}\n`;
-    message += `🚀 *Streams بدأت:* ${stats.streamsStarted}\n`;
-    message += `🛑 *Streams توقفت:* ${stats.streamsStopped}\n`;
-    message += `⏳ *إجمالي وقت البث:* ${formatDuration(stats.totalStreamTime)}\n`;
-    message += `⚠️ *الأخطاء:* ${stats.errors}\n\n`;
-    
-    message += `📊 *حالتك الخاصة:*\n`;
-    message += `▶ Streams جارية: ${userRunningCount}\n`;
-    message += `📝 Streams مسجلة: ${userRegisteredCount}\n\n`;
-    
-    message += `⚙️ *الإعدادات:*\n`;
-    message += `⏱ المدة القصوى: ${formatDuration(MAX_DURATION)}\n`;
-    message += `🔄 المحاولات القصوى: ${MAX_RETRIES}`;
-    
-    await sendMessage(chatId, message, sock);
+  // ===== CLEAN =====
+  if (text.startsWith('/clean')) {
+    const { cleanedRunning } = cleanupExpiredStreams();
+    await sendMessage(chatId, `🧹 *Cleaned:* ${cleanedRunning} streams`, sock);
     return;
   }
 
-  // Encode command
-  if (text.startsWith('/encode') || text.startsWith('!encode') || text.startsWith('.encode')) {
-    const input = text.substring(7).trim();
-    const parts = input.split("|").map(s => s.trim());
-
+  // ===== ENCODE =====
+  if (text.startsWith('/encode')) {
+    const parts = text.substring(7).trim().split("|").map(s => s.trim());
     if (parts.length < 4) {
-      await sendMessage(chatId,
-        `❌ *الصيغة الصحيحة:*\n\n` +
-        `*/encode NAME | SOURCE_URL | STREAM_KEY | DRAW_TEXT*\n\n` +
-        `*مثال:*\n` +
-        `*/encode مباراة1 | https://example.com/stream.m3u8 | FB_123456789 | LIVE TV*`, sock);
+      await sendMessage(chatId, `❌ */encode NAME | URL | KEY | TEXT*`, sock);
       return;
     }
-
-    const [name, sourceUrl, streamKey, drawText] = parts;
-
-    if (!isValidUrl(sourceUrl)) {
-      await sendMessage(chatId, "❌ *رابط المصدر غير صالح*", sock);
+    const [name, url, key, txt] = parts;
+    if (!isValidUrl(url)) {
+      await sendMessage(chatId, `❌ *رابط خاطئ*`, sock);
       return;
     }
-
-    if (runningStreams.has(name) && runningStreams.get(name).owner === chatId) {
-      await sendMessage(chatId,
-        `⚠️ *البث "${name}" يعمل بالفعل*\n` +
-        `استخدم */stop ${name}* لإيقافه أولاً.`, sock);
-      return;
-    }
-
-    cleanupExpiredStreams();
-
     registeredStreams.set(name, {
-      owner: chatId,
-      sourceUrl,
-      streamKey,
-      type: "encode-with-watermark",
-      drawText: drawText,
-      platform: "facebook"
+      owner: chatId, sourceUrl: url, streamKey: key, type: "encode-with-watermark",
+      drawText: txt, platform: "facebook"
     });
-
-    await sendMessage(chatId, `🎬 *جار بدء البث (ENCODE + WATERMARK)...*`, sock);
+    await sendMessage(chatId, `🎬 *ENCODE Started...*``, sock);
     await startStreamByName(name, chatId, sock);
     return;
   }
 
-  // Instagram command
-  if (text.startsWith('/ig') || text.startsWith('!ig') || text.startsWith('.ig')) {
-    const input = text.substring(3).trim();
-    const parts = input.split("|").map(s => s.trim());
-
+  // ===== INSTAGRAM =====
+  if (text.startsWith('/ig')) {
+    const parts = text.substring(3).trim().split("|").map(s => s.trim());
     if (parts.length !== 3) {
-      await sendMessage(chatId,
-        `❌ *الصيغة الصحيحة:*\n\n` +
-        `*/ig NAME | SOURCE_URL | STREAM_KEY*\n\n` +
-        `*مثال:*\n` +
-        `*/ig مباراة1 | https://example.com/stream.m3u8 | IG_123456789*\n\n` +
-        `📱 *ملاحظات Instagram:*\n` +
-        `• سيقوم تلقائياً بتدوير الفيديو 90°\n` +
-        `• يستخدم ENCODING مع Watermark\n` +
-        `• المدة القصوى: ${formatDuration(MAX_DURATION)}`, sock);
+      await sendMessage(chatId, `❌ */ig NAME | URL | KEY*`, sock);
       return;
     }
-
-    const [name, sourceUrl, streamKey] = parts;
-
-    if (!isValidUrl(sourceUrl)) {
-      await sendMessage(chatId, "❌ *رابط المصدر غير صالح*", sock);
+    const [name, url, key] = parts;
+    if (!isValidUrl(url)) {
+      await sendMessage(chatId, `❌ *رابط خاطئ*`, sock);
       return;
     }
-
-    if (runningStreams.has(name) && runningStreams.get(name).owner === chatId) {
-      await sendMessage(chatId,
-        `⚠️ *البث "${name}" يعمل بالفعل*\n` +
-        `استخدم */stop ${name}* لإيقافه أولاً.`, sock);
-      return;
-    }
-
-    cleanupExpiredStreams();
-
     registeredStreams.set(name, {
-      owner: chatId,
-      sourceUrl,
-      streamKey,
-      type: "encode-with-watermark",
-      platform: "instagram"
+      owner: chatId, sourceUrl: url, streamKey: key,
+      type: "encode-with-watermark", platform: "instagram"
     });
-
-    await sendMessage(chatId,
-      `📱 *جار بدء البث على Instagram...*\n\n` +
-      `⚙️ *الإعدادات:*\n` +
-      `• تدوير الفيديو 90° تلقائياً\n` +
-      `• ENCODING مع Watermark\n` +
-      `• المدة القصوى: ${formatDuration(MAX_DURATION)}\n` +
-      `• المحاولات القصوى: ${MAX_RETRIES}`, sock);
-
-    await startStreamByName(name, chatId, sock);
-    return;
-  }
-
-  // Quick add+start via "NAME | SOURCE_URL | STREAM_KEY"
-  const parts = text.split("|").map(x => x.trim());
-
-  if (parts.length === 3) {
-    const [name, sourceUrl, streamKey] = parts;
-    
-    if (!isValidUrl(sourceUrl)) {
-      await sendMessage(chatId, "❌ *رابط المصدر غير صالح*", sock);
-      return;
-    }
-    
-    registeredStreams.set(name, { 
-      owner: chatId,
-      sourceUrl, 
-      streamKey, 
-      type: "normal", 
-      platform: "facebook" 
-    });
-    await sendMessage(chatId,
-      `✅ *تم التسجيل والتشغيل*\n\n` +
-      `📍 *الاسم:* ${name}\n` +
-      `🌐 *المنصة:* Facebook\n` +
-      `⏳ *جار التشغيل...*`, sock);
-    await startStreamByName(name, chatId, sock);
-    return;
-  }
-
-  if (parts.length === 2) {
-    const [sourceUrl, streamKey] = parts;
-    
-    if (!isValidUrl(sourceUrl)) {
-      await sendMessage(chatId, "❌ *رابط المصدر غير صالح*", sock);
-      return;
-    }
-    
-    const name = `S-${Date.now()}`;
-    registeredStreams.set(name, { 
-      owner: chatId,
-      sourceUrl, 
-      streamKey, 
-      type: "normal", 
-      platform: "facebook" 
-    });
-    await sendMessage(chatId,
-      `✅ *تم تشغيل البث*\n\n` +
-      `📍 *الاسم:* ${name}\n` +
-      `🌐 *المنصة:* Facebook\n` +
-      `📡 *المصدر:* ${sourceUrl.length > 30 ? sourceUrl.substring(0, 30) + '...' : sourceUrl}`, sock);
+    await sendMessage(chatId, `📱 *Instagram Stream Starting...*`, sock);
     await startStreamByName(name, chatId, sock);
     return;
   }
@@ -1032,37 +734,20 @@ async function handleCommand(message, sock) {
 
 // ===== MAIN BOT =====
 async function startBot() {
-  // Check session status
-  const hasExistingSession = sessionExists();
-  
-  if (hasExistingSession) {
-    console.log(`📂 جلسة موجودة في: ${SESSION_DIR}`);
-    console.log(`🔄 محاولة الاتصال باستخدام الجلسة المحفوظة...`);
-  } else {
-    console.log(`🆕 لا توجد جلسة سابقة، جاري إنشاء جلسة جديدة...`);
-  }
+  const hasSession = sessionExists();
+  console.log(hasSession ? `📂 Session exists` : `🆕 No session - QR will appear`);
 
   try {
     const { state, saveCreds } = await useMultiFileAuthState(SESSION_DIR);
-
-    const phone = pn('+' + PHONE_NUMBER);
-    if (!phone.isValid()) {
-      console.error('❌ رقم الهاتف غير صالح');
-      return process.exit(1);
-    }
-
     const { version } = await fetchLatestBaileysVersion();
 
-    const KnightBot = makeWASocket({
+    const bot = makeWASocket({
       version,
       auth: {
         creds: state.creds,
-        keys: makeCacheableSignalKeyStore(
-          state.keys,
-          pino({ level: 'fatal' }).child({ level: 'fatal' })
-        ),
+        keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'fatal' }).child({ level: 'fatal' })),
       },
-      printQRInTerminal: !hasExistingSession,
+      printQRInTerminal: true,
       logger: pino({ level: 'fatal' }).child({ level: 'fatal' }),
       browser: Browsers.windows('Chrome'),
       markOnlineOnConnect: false,
@@ -1070,217 +755,70 @@ async function startBot() {
       defaultQueryTimeoutMs: 60000,
       connectTimeoutMs: 60000,
       keepAliveIntervalMs: 30000,
-      retryRequestDelayMs: 250,
-      maxRetries: 5,
     });
 
-    // ===== CONNECTION EVENTS =====
-    KnightBot.ev.on('connection.update', async ({ connection, lastDisconnect }) => {
+    bot.ev.on('connection.update', async (update) => {
+      const { connection, lastDisconnect, qr } = update;
+      
+      if (qr) console.log(`\n📱 Scan QR Code\n`);
+      
       if (connection === 'open') {
-        console.log(`✅ اتصل بنجاح باسم ${PHONE_NUMBER}`);
-        console.log('🤖 بوت البث جاهز الآن!');
-        console.log(`⚙️ الإعدادات: المدة القصوى=${formatDuration(MAX_DURATION)}, المحاولات القصوى=${MAX_RETRIES}`);
-        
-        const allowedChats = loadAllowedChats();
-        console.log(`📊 عدد Chat IDs المسموحة: ${allowedChats.length}`);
-        console.log(`📋 Allowed Chat IDs:`);
-        allowedChats.forEach((chat, index) => {
-          const isGroup = chat.includes('@g.us');
-          const icon = isGroup ? '👥' : '👤';
-          console.log(`   ${index + 1}. ${icon} ${chat}`);
-        });
-        console.log(`\n👨‍💼 Admin Numbers:`);
-        ADMIN_NUMBERS.forEach((admin, index) => {
-          console.log(`   ${index + 1}. ${admin}`);
-        });
-        console.log(`\n✅ البوت جاهز لاستقبال الرسائل!`);
+        console.log(`\n✅ Connected!\n🤖 Bot Ready!\n⚙️ Max: ${formatDuration(MAX_DURATION)}\n`);
+        const chats = loadAllowedChats();
+        console.log(`📊 Allowed Chats: ${chats.length}\n✅ Ready!\n`);
       }
 
       if (connection === 'close') {
-        const code = lastDisconnect?.error?.output?.statusCode;
-        console.log(`🔌 انقطع الاتصال، الكود: ${code}`);
-        
-        if (code === 401) {
-          console.log('❌ تم تسجيل الخروج (401). جاري مسح الجلسة...');
+        const shouldReconnect = (lastDisconnect?.error)?.statusCode !== DisconnectReason.loggedOut;
+        if ((lastDisconnect?.error)?.statusCode === DisconnectReason.loggedOut) {
+          console.log('❌ Logged out');
           clearSession();
-          console.log('🔄 إعادة تشغيل البوت...');
-          await delay(5000);
-          startBot();
-        } else if (code === 403) {
-          console.log('🚫 تم حظر الجهاز (403). جاري مسح الجلسة...');
-          clearSession();
-          console.log('🔄 إعادة تشغيل البوت...');
-          await delay(5000);
-          startBot();
-        } else {
-          console.log('🔁 الاتصال انقطع بشكل غير متوقع. جاري إعادة الاتصال...');
+        } else if (shouldReconnect) {
           await delay(3000);
           startBot();
         }
       }
-      
-      if (connection === 'connecting') {
-        console.log('🔄 جاري الاتصال...');
-      }
     });
 
-    // ===== CREDENTIALS UPDATE =====
-    KnightBot.ev.on('creds.update', async () => {
+    bot.ev.on('creds.update', async () => {
       try {
         await saveCreds();
-        console.log('💾 تم حفظ بيانات الجلسة');
-      } catch (error) {
-        console.error('❌ فشل في حفظ بيانات الجلسة:', error);
+        console.log('💾 Session saved');
+      } catch (e) {
+        console.error('❌ Save error:', e);
       }
     });
 
-    // ===== MESSAGE HANDLER =====
-    KnightBot.ev.on('messages.upsert', async ({ messages, type }) => {
-      console.log(`📨 Received ${messages.length} message(s), type: ${type}`);
-      
+    bot.ev.on('messages.upsert', async ({ messages }) => {
       for (const m of messages) {
-        try {
-          // Skip if no message or from self
-          if (!m.message) {
-            console.log(`⏭️ Skipping message (fromMe: ${m.key.fromMe}, hasMessage: ${!!m.message})`);
-            continue;
-          }
-      
-          const from = m.key.remoteJid;
-          
-          // Extract message text
-          const messageText = m.message?.conversation || 
-                             m.message?.extendedTextMessage?.text || 
-                             '';
-          
-          console.log(`📩 Message from: ${from}`);
-          console.log(`📝 Message text: "${messageText}"`);
-          console.log(`👤 Is Admin: ${isAdminUser(from)}`);
-          console.log(`✅ Is Allowed: ${isAllowedChat(from)}`);
-
-          // Check if user/group is allowed OR is admin
-          if (isAdminUser(from) || isAllowedChat(from)) {
-            console.log(`✅ Processing command from: ${from}`);
-            await handleCommand(m, KnightBot);
-          } else {
-            console.log(`❌ Blocked message from: ${from}`);
-          }
-        } catch (error) {
-          console.error('❌ Error processing message:', error);
-          stats.errors++;
+        if (!m.message || m.key.fromMe) continue;
+        const from = m.key.remoteJid;
+        if (isAdminUser(from) || isAllowedChat(from)) {
+          await handleCommand(m, bot);
         }
       }
     });
 
-    // ===== PAIRING CODE IF NOT REGISTERED =====
-    if (!KnightBot.authState.creds.registered && !hasExistingSession) {
-      console.log('📱 جاري طلب رمز الاقتران...');
-      await delay(3000);
-      try {
-        let code = await KnightBot.requestPairingCode(PHONE_NUMBER);
-        code = code?.match(/.{1,4}/g)?.join('-') || code;
-        console.log(`📌 رمز الاقتران لـ ${PHONE_NUMBER}: ${code}`);
-        console.log('💡 يمكنك أيضًا مسح QR code من التطبيق');
-      } catch (err) {
-        console.error('❌ فشل في طلب رمز الاقتران:', err);
-      }
-    } else if (hasExistingSession) {
-      console.log('🔐 استخدام الجلسة المحفوظة...');
-    }
-
-    // ===== AUTO CLEANUP =====
-    setInterval(() => {
-      cleanupExpiredStreams();
-    }, 60 * 1000);
-
-    setInterval(() => {
-      const runningBefore = runningStreams.size;
-      const registeredBefore = registeredStreams.size;
-
-      const { cleanedRunning, cleanedRegistered } = cleanupExpiredStreams();
-
-      const runningAfter = runningStreams.size;
-      const registeredAfter = registeredStreams.size;
-
-      if (runningBefore !== runningAfter || registeredBefore !== registeredAfter) {
-        console.log(`🔄 تنظيف تلقائي: الجارية: ${runningBefore} → ${runningAfter}, المسجلة: ${registeredBefore} → ${registeredAfter}`);
-      }
-    }, 10 * 60 * 1000);
+    setInterval(cleanupExpiredStreams, 60000);
 
   } catch (error) {
-    console.error('❌ خطأ في بدء البوت:', error);
-    
-    if (error.message.includes('session') || error.message.includes('auth')) {
-      console.log('🔄 جلسة معطلة، جاري إنشاء جلسة جديدة...');
-      clearSession();
-      await delay(5000);
-      startBot();
-    }
+    console.error('❌ Error:', error);
+    clearSession();
+    await delay(5000);
+    startBot();
   }
 }
 
-// ===== START BOT =====
-console.log('🚀 بدء تشغيل بوت البث على WhatsApp...');
-console.log(`📱 الرقم: ${PHONE_NUMBER}`);
-console.log(`📂 مجلد الجلسة: ${SESSION_DIR}`);
-console.log(`👨‍💼 Admin Numbers (${ADMIN_NUMBERS.length}):`);
-ADMIN_NUMBERS.forEach((admin, index) => {
-  console.log(`   ${index + 1}. ${admin}`);
-});
-console.log(`📋 Allowed Chats File: ${ALLOWED_CHATS_FILE}`);
+console.log('🚀 Starting Streaming Bot (Baileys v7.x.x - QR Code)\n');
+startBot();
 
-startBot().catch(err => {
-  console.error('❌ تحطم البوت:', err);
-  console.log('🔄 إعادة تشغيل خلال 10 ثواني...');
-  setTimeout(() => {
-    startBot();
-  }, 10000);
-});
-
-// Handle graceful shutdown
 process.on('SIGINT', () => {
-  console.log("\n🛑 إيقاف البوت بشكل آمن...");
-  
-  console.log('🛑 إيقاف جميع البثوث الجارية...');
+  console.log('\n🛑 Stopping...');
   for (const [name, stream] of runningStreams.entries()) {
     try {
-      console.log(`   إيقاف ${name}...`);
-      if (stream.process) {
-        stream.process.kill("SIGKILL");
-      }
-    } catch (e) {
-      console.error(`خطأ في إيقاف ${name}:`, e);
-    }
+      if (stream.process) stream.process.kill("SIGKILL");
+    } catch (e) {}
   }
-  
-  console.log("✅ تم إيقاف جميع البثوث. مع السلامة!");
-  console.log("💾 تم حفظ الجلسة للمرة القادمة");
+  console.log('✅ Stopped');
   process.exit(0);
-});
-
-process.on('SIGTERM', () => {
-  console.log("\n🔚 تلقي إشارة الإنهاء...");
-  
-  for (const [name, stream] of runningStreams.entries()) {
-    try {
-      if (stream.process) {
-        stream.process.kill("SIGKILL");
-      }
-    } catch (e) {
-      console.error(`خطأ في إيقاف ${name}:`, e);
-    }
-  }
-  
-  console.log("✅ إنهاء نظيف");
-  process.exit(0);
-});
-
-process.on('uncaughtException', (error) => {
-  console.error('❌ خطأ غير معالج:', error);
-  stats.errors++;
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('❌ رفض غير معالج:', reason);
-  stats.errors++;
 });
