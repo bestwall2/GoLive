@@ -1,4 +1,4 @@
-import subprocess, threading, os, time, logging, json, sys, signal, re
+import subprocess, threading, os, time, logging, json, sys, signal, re, html, hmac
 from collections import deque
 import requests
 from flask import Flask, request, jsonify, Response
@@ -390,7 +390,8 @@ def reply(payload, status=200):
 
 @app.route('/api', methods=['GET', 'POST'])
 def api():
-    if request.values.get('secret') != CONTROL_SECRET:
+    supplied = request.headers.get('X-Secret') or request.values.get('secret') or ''
+    if not hmac.compare_digest(supplied, CONTROL_SECRET):
         return reply({"ok": 0, "e": "unauthorized"}, 401)
 
     action = request.values.get('action', '')
@@ -503,269 +504,97 @@ def api():
     return reply({"ok": 0, "e": "bad_action"}, 400)
 
 
+# ─────────────────────────────────────────
+# Uptime / health endpoints (public, no secrets exposed)
+# ─────────────────────────────────────────
+
+START_TIME = time.time()
+
+
+def fmt_duration(sec):
+    sec = int(max(sec, 0))
+    d, rem = divmod(sec, 86400)
+    h, rem = divmod(rem, 3600)
+    m, s = divmod(rem, 60)
+    if d:
+        return f"{d}d {h}h {m}m"
+    if h:
+        return f"{h}h {m}m {s}s"
+    if m:
+        return f"{m}m {s}s"
+    return f"{s}s"
+
+
 @app.route('/ping')
 def ping():
+    # Point UptimeRobot / BetterStack / cron-job.org here
     return 'ok'
 
-# ─────────────────────────────────────────
-# Dashboard UI
-# ─────────────────────────────────────────
+
+@app.route('/health')
+def health():
+    with channels_lock:
+        total = len(channels)
+        running = sum(1 for c in channels.values() if c["status"] == "running")
+    return jsonify({
+        "ok": 1,
+        "uptime_seconds": int(time.time() - START_TIME),
+        "channels_total": total,
+        "channels_running": running,
+    })
+
+
+STATUS_COLORS = {
+    "running": "#4caf7d", "stopped": "#5b6167", "error": "#d9534f",
+}
+
 
 @app.route('/')
-def dashboard():
-    return Response(DASHBOARD_HTML, mimetype='text/html')
+def status_page():
+    rows = []
+    with channels_lock:
+        for c in channels.values():
+            age = time.time() - c["video_created_at"] if c.get("video_created_at") else 0
+            rows.append((c["name"], c["status"], c.get("restarts", 0), age))
 
-DASHBOARD_HTML = r"""<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
+    server_up = fmt_duration(time.time() - START_TIME)
+    all_ok = all(st in ("running", "stopped") for _, st, _, _ in rows)
+
+    body = ""
+    for name, st, restarts, age in rows:
+        color = STATUS_COLORS.get(st, "#d9a441")
+        live_for = f" · live video {fmt_duration(age)}" if st == "running" and age else ""
+        body += (
+            f'<div class="row"><span class="dot" style="background:{color}"></span>'
+            f'<b>{html.escape(name)}</b>'
+            f'<span class="sub">{html.escape(st)}{live_for} · {restarts} retries</span></div>'
+        )
+    if not body:
+        body = '<div class="sub">No channels configured.</div>'
+
+    page = f"""<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>FB Live Manager</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/dashjs/4.7.4/dash.all.min.js"></script>
+<meta http-equiv="refresh" content="15">
+<title>Relay status</title>
 <style>
-  :root{
-    --bg:#14171a; --panel:#1c2024; --panel2:#22262b; --line:#2c3136;
-    --text:#e8e6e1; --sub:#8b9198; --live:#4caf7d; --wait:#d9a441;
-    --idle:#5b6167; --err:#d9534f; --accent:#5b8bd9;
-  }
-  *{box-sizing:border-box;}
-  body{margin:0;background:var(--bg);color:var(--text);
-    font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-    padding:28px 20px 80px;}
-  .wrap{max-width:900px;margin:0 auto;}
-  h1{font-size:20px;font-weight:600;margin:0 0 2px;}
-  .tag{color:var(--sub);font-size:13px;margin:0 0 20px;}
-  .authbar{display:flex;gap:8px;margin-bottom:24px;}
-  .authbar input{flex:1;}
-  input,button,textarea{font:inherit;}
-  input[type=text],input[type=password]{
-    background:var(--panel2);border:1px solid var(--line);color:var(--text);
-    border-radius:6px;padding:9px 11px;font-size:14px;width:100%;}
-  input:focus{outline:none;border-color:var(--accent);}
-  button{cursor:pointer;border-radius:6px;border:1px solid var(--line);
-    background:var(--panel2);color:var(--text);padding:8px 13px;font-size:13px;}
-  button:hover{border-color:var(--accent);}
-  button:disabled{opacity:.4;cursor:default;}
-  button.primary{background:var(--accent);border-color:var(--accent);color:#0d1117;font-weight:600;}
-  button.danger:hover{border-color:var(--err);color:var(--err);}
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;
-    padding:16px 18px;margin-bottom:14px;cursor:pointer;}
-  .addform{display:grid;gap:10px;grid-template-columns:1fr 1fr;margin-bottom:24px;}
-  .addform .full{grid-column:1/-1;}
-  .addform button{grid-column:1/-1;}
-  .row{display:flex;align-items:center;gap:10px;}
-  .dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;}
-  .dot.running{background:var(--live);box-shadow:0 0 6px var(--live);}
-  .dot.waiting,.dot.restarting,.dot.stopping,.dot.starting,.dot.creating_video{background:var(--wait);}
-  .dot.stopped{background:var(--idle);}
-  .dot.error{background:var(--err);}
-  .name{font-weight:600;font-size:15px;}
-  .status{font-size:12px;color:var(--sub);text-transform:capitalize;}
-  .meta{font-size:12px;color:var(--sub);margin-top:6px;line-height:1.6;
-    display:flex;flex-wrap:wrap;gap:14px;}
-  .actions{display:flex;gap:6px;margin-left:auto;flex-wrap:wrap;}
-  .empty{color:var(--sub);font-size:13px;padding:20px 0;text-align:center;}
-  .err{color:var(--err);font-size:13px;margin-top:8px;min-height:16px;}
-  label{font-size:11px;color:var(--sub);display:block;margin-bottom:4px;}
+body{{margin:0;padding:32px 16px;background:#14171a;color:#e8e6e1;
+font-family:-apple-system,"Segoe UI",Roboto,Arial,sans-serif;}}
+.wrap{{max-width:560px;margin:0 auto;}}
+h1{{font-size:18px;margin:0 0 4px;}}
+.sub{{color:#8b9198;font-size:13px;}}
+.card{{background:#1c2024;border:1px solid #2c3136;border-radius:10px;
+padding:14px 16px;margin-top:16px;}}
+.row{{display:flex;align-items:center;gap:10px;padding:8px 0;flex-wrap:wrap;}}
+.dot{{width:9px;height:9px;border-radius:50%;flex-shrink:0;}}
+</style></head><body><div class="wrap">
+<h1><span class="dot" style="display:inline-block;background:{'#4caf7d' if all_ok else '#d9a441'}"></span>
+ {'All systems operational' if all_ok else 'Some channels degraded'}</h1>
+<div class="sub">Server uptime: {server_up} · auto-refreshes every 15s</div>
+<div class="card">{body}</div>
+</div></body></html>"""
+    return Response(page, mimetype='text/html')
 
-  .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);
-    align-items:center;justify-content:center;z-index:50;padding:20px;}
-  .modal-overlay.open{display:flex;}
-  .modal{background:var(--panel);border:1px solid var(--line);border-radius:10px;
-    padding:18px;max-width:640px;width:100%;}
-  .modal h2{margin:0 0 10px;font-size:16px;}
-  .modal video{width:100%;background:#000;border-radius:6px;}
-  .modal .urlbox{font-size:11px;color:var(--sub);word-break:break-all;
-    background:var(--panel2);padding:8px;border-radius:6px;margin-top:10px;}
-  .modal .modal-actions{display:flex;gap:8px;margin-top:12px;}
-</style>
-</head>
-<body>
-<div class="wrap">
-  <h1>FB Live Manager</h1>
-  <p class="tag">Auto-creates Facebook Live Videos, streams into them, rotates every ~4h.</p>
-
-  <div class="authbar">
-    <input id="secret" type="password" placeholder="Control secret">
-    <button class="primary" onclick="connect()">Connect</button>
-  </div>
-  <div id="authErr" class="err"></div>
-
-  <div id="app" style="display:none;">
-    <div class="card" style="cursor:default;">
-      <label style="margin-bottom:8px;">Add channel</label>
-      <div class="addform">
-        <div><label>Name</label><input id="a_name" type="text" placeholder="e.g. France Feed"></div>
-        <div><label>Page ID (blank = "me")</label><input id="a_page" type="text" placeholder="1234567890"></div>
-        <div class="full"><label>Access token (Page or User)</label><input id="a_token" type="password" placeholder="EAA..."></div>
-        <div class="full"><label>Input URL (m3u8 / any ffmpeg-readable source)</label><input id="a_url" type="text" placeholder="http(s)://..."></div>
-        <button onclick="addChannel()">Add channel</button>
-      </div>
-      <div id="addErr" class="err"></div>
-    </div>
-
-    <div id="list"></div>
-    <div id="emptyMsg" class="empty" style="display:none;">No channels yet — add one above.</div>
-  </div>
-</div>
-
-<div class="modal-overlay" id="dashModal">
-  <div class="modal">
-    <h2 id="dashTitle">DASH preview</h2>
-    <video id="dashVideo" controls autoplay muted></video>
-    <div class="urlbox" id="dashUrlBox">Loading...</div>
-    <div class="modal-actions">
-      <button onclick="copyDashUrl()">Copy URL</button>
-      <button onclick="closeDash()">Close</button>
-    </div>
-  </div>
-</div>
-
-<script>
-let SECRET = localStorage.getItem('fblm_secret') || '';
-let poll = null;
-let dashPlayer = null;
-let currentDashUrl = '';
-
-function api(action, params={}){
-  const q = new URLSearchParams({action, secret: SECRET, ...params});
-  return fetch('/api?' + q.toString()).then(r => r.json());
-}
-
-function connect(){
-  const s = document.getElementById('secret').value.trim() || SECRET;
-  SECRET = s;
-  api('list_full').then(res => {
-    if(!res.ok){
-      document.getElementById('authErr').textContent = 'Wrong secret, or server unreachable.';
-      document.getElementById('app').style.display = 'none';
-      return;
-    }
-    localStorage.setItem('fblm_secret', SECRET);
-    document.getElementById('authErr').textContent = '';
-    document.getElementById('app').style.display = 'block';
-    render(res.s);
-    if(!poll) poll = setInterval(refresh, 4000);
-  }).catch(() => {
-    document.getElementById('authErr').textContent = 'Could not reach the server.';
-  });
-}
-
-function refresh(){
-  api('list_full').then(res => { if(res.ok) render(res.s); });
-}
-
-function fmtTime(sec){
-  const h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60);
-  return h + 'h ' + m + 'm';
-}
-
-function render(list){
-  const el = document.getElementById('list');
-  document.getElementById('emptyMsg').style.display = list.length ? 'none' : 'block';
-  el.innerHTML = list.map(c => `
-    <div class="card" onclick="openDash('${c.i}', event)">
-      <div class="row">
-        <div class="dot ${c.st}"></div>
-        <div>
-          <div class="name">${escapeHtml(c.n)}</div>
-          <div class="status">${c.st}${c.rc ? ' · ' + c.rc + ' retries' : ''}</div>
-        </div>
-        <div class="actions">
-          <button ${c.run ? 'disabled' : ''} onclick="event.stopPropagation(); act('start','${c.i}')">Start</button>
-          <button ${c.run ? '' : 'disabled'} onclick="event.stopPropagation(); act('stop','${c.i}')">Stop</button>
-          <button class="danger" onclick="event.stopPropagation(); removeChannel('${c.i}')">Remove</button>
-        </div>
-      </div>
-      <div class="meta">
-        <span>Input: ${escapeHtml(truncate(c.input_url, 40))}</span>
-        <span>Page: ${escapeHtml(c.page_id)}</span>
-        <span>Token •••${escapeHtml(c.token_tail)}</span>
-        ${c.live_video_id ? `<span>Video ${c.live_video_id} (${fmtTime(c.video_age)} old)</span>` : ''}
-      </div>
-    </div>`).join('');
-}
-
-function truncate(s, n){ return s && s.length > n ? s.slice(0, n) + '…' : (s || ''); }
-function escapeHtml(str){
-  return String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-}
-
-function act(action, id){ api(action, {id}).then(refresh); }
-
-function removeChannel(id){
-  if(!confirm('Remove this channel? This stops it and ends its live video.')) return;
-  api('delete', {id}).then(refresh);
-}
-
-function addChannel(){
-  const name = document.getElementById('a_name').value.trim();
-  const page_id = document.getElementById('a_page').value.trim();
-  const access_token = document.getElementById('a_token').value.trim();
-  const input_url = document.getElementById('a_url').value.trim();
-  const errEl = document.getElementById('addErr');
-  errEl.textContent = '';
-  if(!name || !access_token || !input_url){
-    errEl.textContent = 'Fill in name, token and input URL.';
-    return;
-  }
-  api('add', {name, page_id, access_token, input_url}).then(res => {
-    if(!res.ok){
-      errEl.textContent = res.e === 'max_channels' ? 'Limit of 10 channels reached.' : 'Could not add (' + res.e + ').';
-      return;
-    }
-    document.getElementById('a_name').value = '';
-    document.getElementById('a_page').value = '';
-    document.getElementById('a_token').value = '';
-    document.getElementById('a_url').value = '';
-    refresh();
-  });
-}
-
-function openDash(id, evt){
-  document.getElementById('dashModal').classList.add('open');
-  document.getElementById('dashTitle').textContent = 'Loading DASH preview...';
-  document.getElementById('dashUrlBox').textContent = 'Loading...';
-  currentDashUrl = '';
-
-  api('dash', {id}).then(res => {
-    if(!res.ok){
-      document.getElementById('dashTitle').textContent = 'No preview available';
-      document.getElementById('dashUrlBox').textContent =
-        res.e === 'no_active_video' ? 'This channel is not currently live.' : ('Error: ' + res.e);
-      return;
-    }
-    currentDashUrl = res.dash_preview_url || '';
-    document.getElementById('dashTitle').textContent = 'DASH preview (' + (res.status || '') + ')';
-    document.getElementById('dashUrlBox').textContent = currentDashUrl || 'No dash_preview_url returned yet.';
-
-    if(currentDashUrl && window.dashjs){
-      const videoEl = document.getElementById('dashVideo');
-      if(dashPlayer){ dashPlayer.reset(); }
-      dashPlayer = dashjs.MediaPlayer().create();
-      dashPlayer.initialize(videoEl, currentDashUrl, true);
-    }
-  });
-}
-
-function closeDash(){
-  document.getElementById('dashModal').classList.remove('open');
-  if(dashPlayer){ dashPlayer.reset(); dashPlayer = null; }
-}
-
-function copyDashUrl(){
-  if(!currentDashUrl) return;
-  navigator.clipboard.writeText(currentDashUrl).catch(()=>{});
-}
-
-if(SECRET){
-  document.getElementById('secret').value = SECRET;
-  connect();
-}
-</script>
-</body>
-</html>
-"""
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 7860)), debug=False)
