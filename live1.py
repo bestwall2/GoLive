@@ -42,6 +42,9 @@ NEW_VIDEO_SETTLE_SECONDS = int(os.environ.get("RELAY_NEW_VIDEO_SETTLE", "8"))
 
 # Facebook stream keys cap at 4h of cumulative active streaming. Rotate to a
 # brand-new live video (fresh key) well before that, so it never has to stop.
+# How long Start waits for a channel's previous worker to finish shutting down
+# (it ends its Facebook live video first) so Stop All -> Start All just works.
+STOP_WAIT_SECONDS = int(os.environ.get("RELAY_STOP_WAIT", "20"))
 RENEW_SECONDS = int(os.environ.get("RELAY_RENEW_SECONDS", str(3 * 3600 + 55 * 60)))  # 3h55m
 
 CONTROL_SECRET = os.environ.get("CONTROL_SECRET", "changeme")
@@ -203,6 +206,99 @@ def clean_token_field(raw: str) -> str:
 # Channel supervisor
 # ─────────────────────────────────────────
 
+# One rotation clock for the whole running set (not per channel):
+#   epoch  = when the current rotation period began (group start, or last rotation)
+#   gen    = counter bumped at every rotation; each channel remembers the value
+#            it started its cycle with and rotates as soon as the counter moves.
+#   roster = uids of the channels that belong to the live group. When the group
+#            starts, every channel that exists at that moment is in it. A channel
+#            added later is NOT in it, so Start on it only queues it until the
+#            next rotation (or until the group is stopped and started again).
+#   uid    = counter that gives every added channel a unique id (channel ids
+#            can be reused after a delete, uids never are).
+rotation = {"epoch": None, "gen": 0, "roster": set(), "uid": 0}
+
+
+def _next_uid_locked():
+    rotation["uid"] += 1
+    return rotation["uid"]
+
+
+def _others_running_locked(exclude_id):
+    return any(c["running"] for k, c in channels.items() if k != exclude_id)
+
+
+def clean_img_url(value):
+    """Optional link to the channel's image post on Facebook (not a direct image URL).
+    Stored as plain text and never used by the stream, so it is only checked for a
+    sane http(s) link. Returns (ok, cleaned). Empty is allowed."""
+    v = (value or "").strip()
+    if not v:
+        return True, ""
+    if len(v) > 1000 or re.search(r"\s", v) or not re.match(r"^https?://", v, re.I):
+        return False, ""
+    return True, v
+
+
+def _snapshot(c):
+    """The settings a channel actually streams with. Edits go to the saved fields
+    only; this copy is refreshed at a rotation or when a fresh group begins."""
+    return {"name": c["name"], "access_token": c["access_token"],
+            "page_id": c["page_id"], "input_url": c["input_url"]}
+
+
+def _begin_group_locked(now):
+    """A fresh timeline starts: new rotation period, every channel that exists now
+    belongs to the group, and every channel takes its saved settings."""
+    rotation["epoch"] = now
+    rotation["roster"] = {o["uid"] for o in channels.values()}
+    for o in channels.values():
+        o["active"] = _snapshot(o)
+
+
+def _launch_locked(cid, c):
+    """Mark a channel as starting and build its worker thread. Caller holds
+    channels_lock and must call .start() on the returned thread afterwards."""
+    rotation["roster"].add(c["uid"])
+    c["queued"] = False
+    c["running"] = True
+    c["restarts"] = 0
+    c["status"] = "starting"
+    t = threading.Thread(target=run_channel, args=(cid,), daemon=True)
+    c["thread"] = t
+    return t
+
+
+def _check_rotation(my_gen):
+    """True when a fleet-wide rotation has happened since this channel's cycle began.
+    The first channel to notice the deadline fires it for everyone."""
+    fire = False
+    with channels_lock:
+        now = time.time()
+        if rotation["epoch"] and now - rotation["epoch"] >= RENEW_SECONDS:
+            rotation["gen"] += 1
+            rotation["epoch"] = now
+            fire = True
+        due = rotation["gen"] != my_gen
+    if fire:
+        log.info("Rotation reached — all running channels get a new live video")
+        _start_queued()
+    return due
+
+
+def _start_queued():
+    """Called when a channel rotates: bring every queued (new) channel live now."""
+    to_start = []
+    with channels_lock:
+        for cid, c in channels.items():
+            if c.get("queued") and not c["running"]:
+                c["active"] = _snapshot(c)
+                to_start.append((cid, _launch_locked(cid, c)))
+    for cid, t in to_start:
+        log.info(f"[{cid}] Rotation reached — starting queued channel")
+        t.start()
+
+
 def _set(channel_id, **kwargs):
     with channels_lock:
         c = channels.get(channel_id)
@@ -217,15 +313,22 @@ def _is_running(channel_id):
 
 
 def run_channel(channel_id):
+    refresh = False   # first cycle uses the group's active settings; every later
+                      # cycle (a rotation, or a retry after an error) re-reads the saved ones
     while True:
         with channels_lock:
             c = channels.get(channel_id)
             if not c or not c["running"]:
                 return
-            access_token = c["access_token"]
-            page_id = c["page_id"]
-            input_url = c["input_url"]
-            name = c["name"]
+            if refresh:
+                c["active"] = _snapshot(c)
+            refresh = True
+            act = c["active"]
+            access_token = act["access_token"]
+            page_id = act["page_id"]
+            input_url = act["input_url"]
+            name = act["name"]
+            my_gen = rotation["gen"]
 
         # ── create a fresh live video for this ~4h cycle ──
         log.info(f"[{channel_id}] Creating live video via Graph API...")
@@ -262,6 +365,10 @@ def run_channel(channel_id):
         while True:
             if not _is_running(channel_id):
                 reason = "stopped"
+                break
+
+            if _check_rotation(my_gen):
+                reason = "renew"
                 break
 
             try:
@@ -320,8 +427,8 @@ def run_channel(channel_id):
                     reason = "stopped"
                     break
 
-                if time.time() - video_created_at >= RENEW_SECONDS:
-                    log.info(f"[{channel_id}] Renewal window reached — rotating to a new live video")
+                if _check_rotation(my_gen):
+                    log.info(f"[{channel_id}] Rotation — moving to a new live video")
                     kill_process_group(proc)
                     renew_due = True
                     break
@@ -374,7 +481,9 @@ def run_channel(channel_id):
         safe_end_live_video(access_token, live_video_id)
 
         if reason in ("stopped", "fatal"):
-            _set(channel_id, status="stopped" if reason == "stopped" else "error")
+            # on a fatal error also release the channel, otherwise Start would
+            # answer "already" and it could never be restarted
+            _set(channel_id, status="stopped" if reason == "stopped" else "error", running=False)
             return
 
         # reason == "renew": loop back to the top and create the next live video
@@ -407,6 +516,7 @@ def api():
                     "run": int(c["running"]),
                     "rc": c.get("restarts", 0),
                     "input_url": c["input_url"],
+                    "img_url": c.get("img_url", ""),
                     "page_id": c["page_id"],
                     "token_tail": c["access_token"][-6:] if c.get("access_token") else "",
                     "live_video_id": c.get("live_video_id"),
@@ -419,9 +529,12 @@ def api():
         access_token = clean_token_field(request.values.get('access_token', ''))
         page_id = request.values.get('page_id', '').strip() or "me"
         input_url = request.values.get('input_url', '').strip()
+        img_ok, img_url = clean_img_url(request.values.get('img_url', ''))
 
         if not name or not access_token or not input_url:
             return reply({"ok": 0, "e": "missing_fields"}, 400)
+        if not img_ok:
+            return reply({"ok": 0, "e": "bad_img_url"}, 400)
 
         with channels_lock:
             if len(channels) >= MAX_CHANNELS:
@@ -430,10 +543,11 @@ def api():
             cid = next(str(i) for i in range(1, MAX_CHANNELS + 1) if str(i) not in existing_ids)
             channels[cid] = {
                 "name": name, "access_token": access_token, "page_id": page_id,
-                "input_url": input_url, "running": False, "process": None,
+                "input_url": input_url, "img_url": img_url, "running": False, "process": None,
                 "live_video_id": None, "stream_url": None, "video_created_at": None,
                 "status": "stopped", "restarts": 0,
-                "thread": None,
+                "thread": None, "queued": False, "uid": _next_uid_locked(),
+                "active": {"name": name, "access_token": access_token, "page_id": page_id, "input_url": input_url},
             }
         log.info(f"Channel added: id={cid} name={name}")
         return reply({"ok": 1, "i": cid}, 201)
@@ -452,6 +566,11 @@ def api():
             new_token = clean_token_field(request.values.get('access_token', ''))
             new_page = request.values.get('page_id', '').strip()
             new_url = request.values.get('input_url', '').strip()
+            img_ok, new_img = clean_img_url(request.values.get('img_url', ''))
+            if not img_ok:
+                return reply({"ok": 0, "e": "bad_img_url"}, 400)
+            if new_img:
+                c["img_url"] = new_img   # plain text link: takes effect at once, never waits for a rotation
             if new_name:
                 c["name"] = new_name
             if new_token:
@@ -461,8 +580,11 @@ def api():
             if new_url:
                 c["input_url"] = new_url
             running = bool(c["running"])
-        log.info(f"Channel edited: id={cid} (saved; applies at next rotation/start)")
-        return reply({"ok": 1, "applied": 0, "pending": int(running)})
+            stream_changed = bool(new_name or new_token or new_page or new_url)
+        log.info(f"Channel edited: id={cid} (saved; stream settings apply at next rotation/start)")
+        if stream_changed:
+            return reply({"ok": 1, "applied": 0, "pending": int(running)})
+        return reply({"ok": 1, "applied": 1, "pending": 0})   # only the picture changed: done
 
     if action == 'delete':
         cid = request.values.get('id', '')
@@ -472,7 +594,7 @@ def api():
                 return reply({"ok": 0, "e": "notfound"}, 404)
             c["running"] = False
             proc = c["process"]
-            access_token = c["access_token"]
+            access_token = c["active"]["access_token"]   # the token the live video was created with
             live_video_id = c.get("live_video_id")
             del channels[cid]
         if proc and proc.poll() is None:
@@ -483,23 +605,50 @@ def api():
 
     if action == 'start':
         cid = request.values.get('id', '')
+        force = request.values.get('force', '').lower() in ('1', 'true', 'yes')
+        # If this channel's previous worker is still shutting down (it ends its
+        # live video first), wait for it so Stop All -> Start All needs no pause.
+        with channels_lock:
+            c = channels.get(cid)
+            old_t = c.get("thread") if c else None
+            must_wait = bool(c and not c["running"] and old_t and old_t.is_alive())
+        if must_wait:
+            old_t.join(timeout=STOP_WAIT_SECONDS)
         with channels_lock:
             c = channels.get(cid)
             if not c:
                 return reply({"ok": 0, "e": "notfound"}, 404)
             if c["running"]:
                 return reply({"ok": 1, "st": "already"})
+            now = time.time()
+            in_group = c["uid"] in rotation["roster"]
+            if _others_running_locked(cid):
+                if force:
+                    c["active"] = _snapshot(c)        # forced: join now with saved settings
+                elif not in_group:
+                    c["queued"] = True                # added after the group began
+                    c["status"] = "queued"
+                    log.info(f"Channel queued until next rotation: id={cid}")
+                    return reply({"ok": 1, "st": "queued"})
+            else:
+                # nothing is running, so this press begins (or resumes) the group
+                timeline_alive = bool(rotation["epoch"] and rotation["roster"]
+                                      and now - rotation["epoch"] < RENEW_SECONDS)
+                if force or not timeline_alive:
+                    _begin_group_locked(now)          # fresh timeline: saved settings, everyone joins
+                elif not in_group:
+                    # same timeline resumed (Stop All -> Start All before the rotation
+                    # time): late additions and edits keep waiting for the rotation
+                    c["queued"] = True
+                    c["status"] = "queued"
+                    log.info(f"Channel queued until next rotation: id={cid}")
+                    return reply({"ok": 1, "st": "queued"})
             old_t = c.get("thread")
             if old_t and old_t.is_alive():
-                # previous worker is still shutting down — retry in a moment
                 return reply({"ok": 0, "e": "still_stopping"}, 409)
-            c["running"] = True
-            c["restarts"] = 0
-            c["status"] = "starting"
-            t = threading.Thread(target=run_channel, args=(cid,), daemon=True)
-            c["thread"] = t
+            t = _launch_locked(cid, c)
         t.start()
-        log.info(f"Channel start requested: id={cid}")
+        log.info(f"Channel start requested: id={cid} force={force}")
         return reply({"ok": 1})
 
     if action == 'stop':
@@ -508,6 +657,11 @@ def api():
             c = channels.get(cid)
             if not c:
                 return reply({"ok": 0, "e": "notfound"}, 404)
+            if c.get("queued") and not c["running"]:
+                c["queued"] = False
+                c["status"] = "stopped"
+                log.info(f"Queued channel cancelled: id={cid}")
+                return reply({"ok": 1})
             c["running"] = False
             c["status"] = "stopping"
             proc = c["process"]
@@ -522,7 +676,7 @@ def api():
             c = channels.get(cid)
             if not c:
                 return reply({"ok": 0, "e": "notfound"}, 404)
-            access_token = c["access_token"]
+            access_token = c["active"]["access_token"]
             live_video_id = c.get("live_video_id")
         if not live_video_id:
             return reply({"ok": 0, "e": "no_active_video"}, 400)
@@ -557,6 +711,15 @@ def fmt_duration(sec):
     return f"{s}s"
 
 
+def _next_rotation_in():
+    with channels_lock:
+        epoch = rotation["epoch"]
+        live = any(c["running"] for c in channels.values())
+    if not epoch or not live:
+        return None
+    return max(int(epoch + RENEW_SECONDS - time.time()), 0)
+
+
 @app.route('/ping')
 def ping():
     # Point UptimeRobot / BetterStack / cron-job.org here
@@ -573,6 +736,7 @@ def health():
         "uptime_seconds": int(time.time() - START_TIME),
         "channels_total": total,
         "channels_running": running,
+        "next_rotation_seconds": _next_rotation_in(),
     })
 
 
@@ -590,7 +754,9 @@ def status_page():
             rows.append((c["name"], c["status"], c.get("restarts", 0), age))
 
     server_up = fmt_duration(time.time() - START_TIME)
-    all_ok = all(st in ("running", "stopped") for _, st, _, _ in rows)
+    nr = _next_rotation_in()
+    next_rot = fmt_duration(nr) if nr is not None else "n/a"
+    all_ok = all(st in ("running", "stopped", "queued") for _, st, _, _ in rows)
 
     body = ""
     for name, st, restarts, age in rows:
@@ -622,7 +788,7 @@ padding:14px 16px;margin-top:16px;}}
 </style></head><body><div class="wrap">
 <h1><span class="dot" style="display:inline-block;background:{'#4caf7d' if all_ok else '#d9a441'}"></span>
  {'All systems operational' if all_ok else 'Some channels degraded'}</h1>
-<div class="sub">Server uptime: {server_up} · auto-refreshes every 15s</div>
+<div class="sub">Server uptime: {server_up} · next rotation: {next_rot} · auto-refreshes every 15s</div>
 <div class="card">{body}</div>
 </div></body></html>"""
     return Response(page, mimetype='text/html')
