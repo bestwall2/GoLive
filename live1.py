@@ -433,9 +433,36 @@ def api():
                 "input_url": input_url, "running": False, "process": None,
                 "live_video_id": None, "stream_url": None, "video_created_at": None,
                 "status": "stopped", "restarts": 0,
+                "thread": None,
             }
         log.info(f"Channel added: id={cid} name={name}")
         return reply({"ok": 1, "i": cid}, 201)
+
+    if action == 'edit':
+        # Saves new settings only. A running channel keeps streaming with the
+        # settings it started its current cycle with; the saved values are read
+        # when the next cycle starts (next ~3h55m rotation, or a fresh start).
+        cid = request.values.get('id', '')
+        with channels_lock:
+            c = channels.get(cid)
+            if not c:
+                return reply({"ok": 0, "e": "notfound"}, 404)
+            # blank / missing fields keep the current value
+            new_name = request.values.get('name', '').strip()
+            new_token = clean_token_field(request.values.get('access_token', ''))
+            new_page = request.values.get('page_id', '').strip()
+            new_url = request.values.get('input_url', '').strip()
+            if new_name:
+                c["name"] = new_name
+            if new_token:
+                c["access_token"] = new_token
+            if new_page:
+                c["page_id"] = new_page
+            if new_url:
+                c["input_url"] = new_url
+            running = bool(c["running"])
+        log.info(f"Channel edited: id={cid} (saved; applies at next rotation/start)")
+        return reply({"ok": 1, "applied": 0, "pending": int(running)})
 
     if action == 'delete':
         cid = request.values.get('id', '')
@@ -462,10 +489,15 @@ def api():
                 return reply({"ok": 0, "e": "notfound"}, 404)
             if c["running"]:
                 return reply({"ok": 1, "st": "already"})
+            old_t = c.get("thread")
+            if old_t and old_t.is_alive():
+                # previous worker is still shutting down — retry in a moment
+                return reply({"ok": 0, "e": "still_stopping"}, 409)
             c["running"] = True
             c["restarts"] = 0
             c["status"] = "starting"
-        t = threading.Thread(target=run_channel, args=(cid,), daemon=True)
+            t = threading.Thread(target=run_channel, args=(cid,), daemon=True)
+            c["thread"] = t
         t.start()
         log.info(f"Channel start requested: id={cid}")
         return reply({"ok": 1})
