@@ -132,7 +132,7 @@ class Pipeline:
         ]
         cmd2 = [
             "ffmpeg", "-re", "-f", "mpegts", "-i", "-",
-            "-max_muxing_queue_size", "1024", 
+            "-max_muxing_queue_size", "1024", "-max_interleave_delta", "0", 
             "-c:v", "copy", "-vsync", "passthrough",
             "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-ac", "2",
             "-af", "aresample=async=1:min_hard_comp=0.100000:first_pts=0",
