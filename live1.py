@@ -112,6 +112,7 @@ def get_dash_preview(access_token, live_video_id):
 
 # ─────────────────────────────────────────
 # Pipeline (cross-platform: no bash, no process groups)
+# "-max_interleave_delta", "0", i remove it because it make isuss with vps ram , but its very imp for stable stream 
 # ─────────────────────────────────────────
 
 class Pipeline:
@@ -131,7 +132,7 @@ class Pipeline:
         ]
         cmd2 = [
             "ffmpeg", "-re", "-f", "mpegts", "-i", "-",
-            "-max_muxing_queue_size", "1024", "-max_interleave_delta", "0",
+            "-max_muxing_queue_size", "1024", 
             "-c:v", "copy", "-vsync", "passthrough",
             "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-ac", "2",
             "-af", "aresample=async=1:min_hard_comp=0.100000:first_pts=0",
@@ -632,9 +633,13 @@ def api():
                     return reply({"ok": 1, "st": "queued"})
             else:
                 # nothing is running, so this press begins (or resumes) the group
-                timeline_alive = bool(rotation["epoch"] and rotation["roster"]
-                                      and now - rotation["epoch"] < RENEW_SECONDS)
-                if force or not timeline_alive:
+                timeline_alive = bool(rotation["epoch"] and now - rotation["epoch"] < RENEW_SECONDS)
+                # a group can only be RESUMED if at least one of its channels still exists;
+                # otherwise (first start, or every old channel was deleted) there is nothing
+                # to wait for, so this press begins a fresh timeline and everyone starts
+                resumable = timeline_alive and any(o["uid"] in rotation["roster"]
+                                                   for o in channels.values())
+                if force or not resumable:
                     _begin_group_locked(now)          # fresh timeline: saved settings, everyone joins
                 elif not in_group:
                     # same timeline resumed (Stop All -> Start All before the rotation
